@@ -1,0 +1,92 @@
+from cryptography.hazmat.primitives.serialization import load_der_private_key, load_pem_private_key
+from asn1crypto.cms import ContentInfo
+from pathlib import Path
+#from asn1crypto.tsp import TSTInfo
+
+def es_pkey_cifrada(pkey: str | Path) -> tuple[bool, str]:
+    '''
+    Determina si una pkey está cifrada, además del tipo de encode que usa:
+    DER o PEM.
+
+    :param ruta_pkey: `str` ruta tipo OS del archivo pkey.
+    :return: `tuple` para desempaquetar con `bool` de respuesta y `str`
+    indicando el tipo de encode, ej: (True, "DER"), (False, "PEM")
+    '''
+
+    with open(pkey, 'rb') as b:
+        data = b.read()
+
+    # Primero intenta cargar en DER; encode que entrega el SAT para las claves,
+    # y que en principio debería de entrar siempre a la función dado que la
+    # mayoría de la bandita no lo cambia.
+    try:
+        load_der_private_key(data=data, password=None)
+    except TypeError:
+        return (True, "DER")
+
+    # Si algún cabeza lista ya pasó su pkey a PEM se gestiona tal que si exceptua
+    # "ValueError" la clave entonces es PEM.
+    except ValueError:
+        try:
+            load_pem_private_key(data=data, password=None)
+        except TypeError:
+            return (True, "PEM")
+        else:
+            return (False, "PEM")
+    else:
+        return (False, "DER")
+
+def es_passwd_de_pkey(ruta_pkey: str, tipo_encode: str, passwd: str) -> bool:
+    '''
+    Confirma si la passphrase de una determinada pkey puede descifrarla.\n
+    Usar después de `es_pkey_cifrada()` para usar correctamente el tipo de encode.
+
+    :param ruta_pkey: Ruta tipo OS del archivo pkey.
+    :param passwd: `str` a probar como passphrase de la pkey.
+    :param tipo_encode: `str` en mayusculas indicando el tipo de encode que utiliza
+    la clave: "DER", "PEM"
+
+    :return: `bool`: `True` si passwd descifra, `False` en caso contrario.
+    '''
+
+    with open(ruta_pkey, 'rb') as b:
+        data = b.read()
+
+    if tipo_encode == "DER":
+        func = load_der_private_key 
+    elif tipo_encode == "PEM":
+        func = load_pem_private_key 
+
+    try:
+        func(data=data, password=passwd)
+    except TypeError, ValueError:
+        return False
+    else:
+        return True
+
+def extraer_tst_general(tst: bytes) -> bytes | None:
+    '''
+    Extrae los bytes DER de un TST en el 'Encapsulated Content Info' general de un TST (CMS Signed Data de TSA).
+    '''
+    contenedor = ContentInfo.load(encoded_data=tst)
+    #if contenedor["content"]["encap_content_info"]["content_type"].native == "tst_info":
+    if contenedor["content"]["encap_content_info"]["content_type"].dotted == "1.2.840.113549.1.9.16.1.4":
+        return contenedor["content"]["encap_content_info"].contents
+    else:
+        return None
+
+def extraer_tst_signer(cms: bytes, signer: int, contrafirma: int) -> bytes:
+    '''
+    Extrae los bytes DER de un TST anidado en las contrafirmas de un SigerInfo.
+    '''
+    contenedor = ContentInfo.load(encoded_data=cms)
+
+    unsignedAttrs = contenedor["content"]["signer_infos"][signer]["unsigned_attrs"]
+    if not unsignedAttrs:
+        raise ValueError('El firmante CARECE de atributos no firmados.')
+
+    for i in unsignedAttrs:
+        #if j["type"].native == "signature_time_stamp_token":
+        if i["type"].dotted == "1.2.840.113549.1.9.16.2.14":
+            return i["values"][contrafirma].dump()
+            #return i["values"][contrafirma]["content"]["encap_content_info"]["content"].contents # Solo bytes der de TSTInfo
