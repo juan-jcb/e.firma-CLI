@@ -1,5 +1,5 @@
 import logging
-from efcli.env.config import MENSAJES_MISC
+from efcli.config import MENSAJES_MISC
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +32,9 @@ def validar_sintaxis(args_posicionales: list, modulo: dict) -> dict:
     # Requiere de cargar todas las flags de programa de manera ordenada para hacer un escrutinio de filtrado adecuado.
     programa_flags = {}
     programa_flags.update(modulo['flags_de_argumento'])
-    programa_flags.update(modulo['flags_estaticas'])
 
+    if modulo.get('flags_estaticas'):
+        programa_flags.update(modulo['flags_estaticas'])
     if modulo.get('miscelanea'):
         programa_flags.update(modulo['miscelanea'])
 

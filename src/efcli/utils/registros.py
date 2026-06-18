@@ -24,14 +24,14 @@ class ColorFormatter(logging.Formatter):
         return super().format(record)
 
 handler = logging.StreamHandler()
-handler.setFormatter(ColorFormatter("[%(levelname)s] (%(asctime)s) %(message)s"))
+handler.setFormatter(ColorFormatter("[%(levelname)s] %(message)s"))
 logging.getLogger().addHandler(handler)
 logging.getLogger().setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
 
 @contextmanager
-def log_format(fmt: str, level, target_logger: logging.Logger=None, formatter_class=ColorFormatter):
+def log_format(fmt: str, target_logger: logging.Logger=None, level=logging.INFO, formatter_class=ColorFormatter):
     """
     Cambia temporalmente el formato del logger mientras se esté dentro de cualquier
     `with`, y al salir del bloque se restaura el formato original automáticamente.

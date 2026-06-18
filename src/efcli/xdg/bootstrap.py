@@ -1,13 +1,108 @@
 import logging, shutil, json, time
 from pathlib import Path
 
-from efcli.env.config import APP, CONFIG_DIR, DATA_DIR, STATE_DIR, PKI_DIR, PKI_DEFAULTS, STATE_FILE, STATE_USERS_FILE, GLOBAL_CONFIG_FILE
+from efcli import config
 from efcli.pki.x509_utils import cargar_cert_asn1, leer_subject_simple
 from efcli.utils import cripto, registros, wrappers, regex
 
 logger = logging.getLogger(__name__)
 
-LIVE_ENV_FILES = (CONFIG_DIR, DATA_DIR, STATE_DIR) # GLOBAL_CONFIG_FILE['pdf_ruta_base']
+LIVE_ENV_FILES = (config.CONFIG_DIR, config.DATA_DIR, config.STATE_DIR) # GLOBAL_CONFIG_FILE['pdf_ruta_base']
+
+def check_env(log_level=logging.INFO):
+    '''
+    Evaluación en 2 partes sobre la integridad del entorno externo XDG.
+
+        1. Qué los directorios de entorno existan
+        2. Qué la configuración de estádo sea coherente.
+    '''
+    with registros.log_format(target_logger=logger, fmt="[%(levelname)s] %(message)s", level=log_level):
+
+        logger.debug('=== ESTRUCTURA XDG ===')
+        for i in LIVE_ENV_FILES:
+            if Path(i).exists():
+                logger.debug("Existe: '%s'", i)
+            else:
+                logger.debug("El directorio '%s' no existe.", i)
+                return False
+
+        logger.debug('=== ARCHIVOS DE ESTADO ===')
+        if Path(config.STATE_FILE).exists() and Path(config.STATE_USERS_FILE).exists():
+            logger.debug("Existe: '%s'", config.STATE_FILE)
+            logger.debug("Existe: '%s'", config.STATE_USERS_FILE)
+
+
+            logger.debug("=== COHERENCIA DEL ENTORNO ===")
+            with open(config.STATE_FILE, "r") as f:
+                programa = json.loads(s=f.read())
+
+            for d in programa['xdg_dirs'].values():
+                if Path(d).is_dir():
+                    logger.debug("Correctamente referenciado: '%s'", d)
+                else:
+                    logger.debug("El directorio '%s' no fue encontrado.", d)
+                    return False
+
+            for d in programa['custom_dirs'].values():
+                if Path(d).is_dir():
+                    logger.debug("Existe: '%s'", d)
+                else:
+                    logger.debug("El directorio '%s' no fue encontrado.", d)
+                    return False
+
+            for f in programa['assets']:
+                if Path(f).is_file():
+                    logger.debug("Existe: '%s'", f)
+                else:
+                    logger.debug("El archivo '%s' no fue encontrado.", f)
+                    return False
+                
+            logger.debug("=== USUARIOS ===")
+            with open(config.STATE_USERS_FILE, "r") as f:
+                usuarios = json.loads(s=f.read())
+
+            logger.debug("Principal: %s", usuarios['principal'])
+            for idx, i in enumerate(iterable=usuarios['usuarios'].keys(), start=1):
+                logger.debug("%s: %s", idx, i)
+                for v, k in usuarios['usuarios'][i].items(): # porque son diccionarios
+                    if not Path(k).exists():
+                        logger.debug("[%s] '%s' no fue encontrado.", i , k)
+                        return False
+                    else:
+                        logger.debug("%s: '%s'", v, k)
+
+        else:
+            logger.debug("Faltan archivos de estado.")
+            return False
+
+        return True
+
+def reset_env():
+    # TODO: estaría bueno una función read_env() que lea el entorno y retorne dinámicamente un diccionario
+    # sobre el cual iterar. De momento se hace hardcodeado:
+
+    import tomllib
+    with open(config.GLOBAL_CONFIG_FILE, "rb") as f:
+        global_config = tomllib.load(f)
+
+    for i in (
+        config.CONFIG_DIR,
+        config.DATA_DIR,
+        config.STATE_DIR,
+        global_config['pdf_ruta_base']
+    ):
+        try:
+            shutil.rmtree(i)
+            print(f"Directorio borrado: '{i}'")
+        except FileNotFoundError:
+            print(f"El directorio no existe: '{i}'")
+        except PermissionError:
+            print(f"Sin permisos para eliminar: '{i}'")
+        except Exception as e:
+            print(f"Error: {e}")
+
+    print('Entorno externo borrado completamente.')
+    return True
 
 @wrappers.salida_limpia()
 def init():
@@ -207,7 +302,7 @@ creado en cada instancia o sesión de firma.
         else:
             logger.warning("El directorio debe estár al mismo nivel que su $HOME, por favor ingrese uno nuevo.")
 
-    USER_DIR = CONFIG_DIR / NOMBRE_USUARIO
+    USER_DIR = config.CONFIG_DIR / NOMBRE_USUARIO
     USER_CONFIG_FILE = USER_DIR / f"{NOMBRE_USUARIO}.toml"
 
     time.sleep(1)
@@ -222,8 +317,8 @@ Para firmar documentos se requiere de los archivos incluidos en su e.firma:
 Este programa *realizará 1 copia* de cada archivo y las almacenará localmente
 en la ruta XDG estándar 'XDG_DATA_HOME' del usuario actual en su sistema:
 
-    '/home/mi_usuario/.config/{APP}/{NOMBRE_USUARIO}/{NOMBRE_USUARIO}.key'
-    '/home/mi_usuario/.config/{APP}/{NOMBRE_USUARIO}/{NOMBRE_USUARIO}.crt'
+    '/home/mi_usuario/.config/{config.APP}/{NOMBRE_USUARIO}/{NOMBRE_USUARIO}.key'
+    '/home/mi_usuario/.config/{config.APP}/{NOMBRE_USUARIO}/{NOMBRE_USUARIO}.crt'
 
 Y lo mismo para cada usuario nuevo creado.
 """)
@@ -323,8 +418,8 @@ Puede llenar los campos o dejarlos en blanco a criterio.
 pdf_ruta_base = "{PDF_RUTA_BASE}"
 
 [PKI]
-trust_roots = "{PKI_DIR / 'banxico_root_bundle.pem'}"
-intermediate_cas = "{PKI_DIR / 'sat_intermedia_bundle.pem'}"
+trust_roots = "{config.DATA_PKI_DIR / 'banxico_root_bundle.pem'}"
+intermediate_cas = "{config.DATA_PKI_DIR / 'sat_intermedia_bundle.pem'}"
 
 [OCSP]
 endpoints = [
@@ -393,11 +488,18 @@ TST_DSS = false
 
     # TODO: no me agrada esta estructura.
     def hacer_dirs() -> None:
-        for i in (CONFIG_DIR, DATA_DIR, STATE_DIR, PKI_DIR, USER_DIR, PDF_RUTA_BASE):
+        for i in (
+            config.CONFIG_DIR,
+            config.DATA_DIR,
+            config.STATE_DIR,
+            config.DATA_PKI_DIR,
+            USER_DIR,
+            PDF_RUTA_BASE
+        ):
             i.mkdir(parents=True, exist_ok=True)
 
     def seed_config() -> None:
-        with open(GLOBAL_CONFIG_FILE, "w") as f: 
+        with open(config.GLOBAL_CONFIG_FILE, "w") as f: 
             f.write(skel_global)
 
         with open(USER_CONFIG_FILE, "w") as f: 
@@ -406,25 +508,25 @@ TST_DSS = false
         shutil.copy2(src=cert_input, dst=CERT_USUARIO)
         shutil.copy2(src=pkey_input, dst=PKEY_USUARIO)
         
-        for i in PKI_DEFAULTS:
-            shutil.copy2(src=i, dst=f"{PKI_DIR}/{i.name}")
+        for i in config.PKI_ASSETS:
+            shutil.copy2(src=i, dst=f"{config.DATA_PKI_DIR}/{i.name}")
 
     hacer_dirs()
     seed_config()
 
     init_state_programa = {
             'xdg_dirs': {
-                'config_dir': CONFIG_DIR.as_posix(),
-                'data_dir': DATA_DIR.as_posix(),
-                'state_dir': STATE_DIR.as_posix(),
+                'config_dir': config.CONFIG_DIR.as_posix(),
+                'data_dir': config.DATA_DIR.as_posix(),
+                'state_dir': config.STATE_DIR.as_posix(),
             },
 
             'custom_dirs': {
                 'pdf_ruta_base': PDF_RUTA_BASE.as_posix(),
-                'pki_dir': PKI_DIR.as_posix(),
+                'data_pki_dir': config.DATA_PKI_DIR.as_posix(),
             },
 
-            'assets': [f"{PKI_DIR}/{i.name}" for i in PKI_DEFAULTS]
+            'assets': [f"{config.DATA_PKI_DIR}/{i.name}" for i in config.PKI_ASSETS]
         }
 
     init_state_usuarios = {
@@ -442,97 +544,7 @@ TST_DSS = false
     state_programa = json.dumps(obj=init_state_programa, indent=2, ensure_ascii=False)
     state_usuarios = json.dumps(obj=init_state_usuarios, indent=2, ensure_ascii=False)
 
-    with open(STATE_FILE, "w") as f:
+    with open(config.STATE_FILE, "w") as f:
         f.write(state_programa)
-    with open(STATE_USERS_FILE, "w") as f:
+    with open(config.STATE_USERS_FILE, "w") as f:
         f.write(state_usuarios)
-
-def check_env(log_level=logging.INFO):
-    '''
-    Evaluación en 2 partes.
-
-    1. Qué los directorios de entorno existan
-    2. Qué la configuración de estádo sea coherente.
-    '''
-    with registros.log_format(fmt="[%(levelname)s] %(message)s", level=log_level, target_logger=logger):
-
-        logger.debug('=== ESTRUCTURA XDG ===')
-        for i in LIVE_ENV_FILES:
-            if Path(i).exists():
-                logger.debug("Existe: '%s'", i)
-            else:
-                logger.debug("El directorio '%s' no existe.", i)
-                return False
-
-        logger.debug('=== ARCHIVOS DE ESTADO ===')
-        if Path(STATE_FILE).exists() and Path(STATE_USERS_FILE).exists():
-            logger.debug("Existe: '%s'", STATE_FILE)
-            logger.debug("Existe: '%s'", STATE_USERS_FILE)
-
-
-            logger.debug("=== COHERENCIA DEL ENTORNO ===")
-            with open(STATE_FILE, "r") as f:
-                programa = json.loads(s=f.read())
-
-            for d in programa['xdg_dirs'].values():
-                if Path(d).is_dir():
-                    logger.debug("Correctamente referenciado: '%s'", d)
-                else:
-                    logger.debug("El directorio '%s' no fue encontrado.", d)
-                    return False
-
-            for d in programa['custom_dirs'].values():
-                if Path(d).is_dir():
-                    logger.debug("Existe: '%s'", d)
-                else:
-                    logger.debug("El directorio '%s' no fue encontrado.", d)
-                    return False
-
-            for f in programa['assets']:
-                if Path(f).is_file():
-                    logger.debug("Existe: '%s'", f)
-                else:
-                    logger.debug("El archivo '%s' no fue encontrado.", f)
-                    return False
-                
-            logger.debug("=== USUARIOS ===")
-            with open(STATE_USERS_FILE, "r") as f:
-                usuarios = json.loads(s=f.read())
-
-            logger.debug("Principal: %s", usuarios['principal'])
-            for idx, i in enumerate(iterable=usuarios['usuarios'].keys(), start=1):
-                logger.debug("%s: %s", idx, i)
-                for v, k in usuarios['usuarios'][i].items(): # porque son diccionarios
-                    if not Path(k).exists():
-                        logger.debug("[%s] '%s' no fue encontrado.", i , k)
-                        return False
-                    else:
-                        logger.debug("%s: '%s'", v, k)
-
-        else:
-            logger.debug("Faltan archivos de estado.")
-            return False
-
-        return True
-
-def reset_env():
-    # TODO: estaría bueno una función read_env() que lea el entorno y retorne dinámicamente un diccionario
-    # sobre el cual iterar. De momento se hace hardcodeado:
-
-    import tomllib
-    with open(GLOBAL_CONFIG_FILE, "rb") as f:
-        global_config = tomllib.load(f)
-
-    for i in (CONFIG_DIR, DATA_DIR, STATE_DIR, global_config['pdf_ruta_base']):
-        try:
-            shutil.rmtree(i)
-            print(f"Directorio borrado: '{i}'")
-        except FileNotFoundError:
-            print(f"El directorio no existe: '{i}'")
-        except PermissionError:
-            print(f"Sin permisos para eliminar: '{i}'")
-        except Exception as e:
-            print(f"Error: {e}")
-
-    print('Entorno externo borrado completamente.')
-    return True

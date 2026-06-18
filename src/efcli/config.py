@@ -10,26 +10,40 @@ CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") 
 DATA_DIR = Path(os.environ.get("XDG_DATA_HOME")     or Path.home() / ".local/share") / APP
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME")   or Path.home() / ".local/state") / APP
 
-STATE_FILE = STATE_DIR / f"{APP}.json"
-STATE_USERS_FILE = STATE_DIR / "usuarios.json"
 
-PKI_DEFAULTS = (
+PKI_ASSETS = (
     PACKAGE_DIR / "assets" / "banxico_pki" / "banxico_root_bundle.pem",
     PACKAGE_DIR / "assets" / "banxico_pki" / "sat_intermedia_bundle.pem",
 )
 
-PKI_DIR = DATA_DIR / "pki"
-
+STATE_FILE = STATE_DIR / f"{APP}.json"
+STATE_USERS_FILE = STATE_DIR / "usuarios.json"
+DATA_PKI_DIR = DATA_DIR / "pki"
 GLOBAL_CONFIG_FILE = CONFIG_DIR / "global.toml"
 GLOBAL_CONFIG: dict = {}
 
+def load_global():
+    global GLOBAL_CONFIG
+    with open(GLOBAL_CONFIG_FILE, "rb") as f:
+        GLOBAL_CONFIG = tomllib.load(f)
+
+def load_current_user():
+    with open(STATE_USERS_FILE, "r") as f:
+        usuarios = json.loads(s=f.read())
+
+    principal_conf = usuarios['usuarios'].get(usuarios['principal'])['config_file']
+    with open(principal_conf, "rb") as f:
+        cnf = tomllib.load(f)
+    return cnf
+
+# Flags estáticas se evaluan en conmutador, las de argumento en sintaxis post-conmutador.
+# Se mantiene la estructura en este diccionario por estetica visual.
 FLAGS = {
     'principal': {
         'flags_de_argumento': {
             'firmar': ('-f', '--firmar',),
             'perfil': ('-p', '--perfil',),
         },
-        'flags_estaticas': {},
 
         'perfiles': {
             'B': 0,
@@ -48,37 +62,38 @@ FLAGS = {
 
     'submodulos': {
         'init': {
-            'flags_de_argumento': {},
+            #'flags_de_argumento': {},
             'flags_estaticas': {
                 'reset': ('--reset',),
                 'check': ('--check',),
             }
         },
+        'user': {
+            #'flags_de_argumento': {},
+            'flags_estaticas': {
+                'whoami': ('--whoami',),
+            }
+        },
+
         'ocsp': {
             'flags_de_argumento': {
                 'query': ('--query',),
                 'validez': ('--validez',),
                 'parse': ('--parse',),
             },
-            'flags_estaticas': {}
+            #'flags_estaticas': {}
         },
         'tsa': {
             'flags_de_argumento': {
                 'token': ('--token',),
             },
-            'flags_estaticas': {}
+            #'flags_estaticas': {}
         },
         'pdf': {
             'flags_de_argumento': {
                 'firmas': ('--firmas',),
             },
-            'flags_estaticas': {}
-        },
-        'user': {
-            'flags_de_argumento': {},
-            'flags_estaticas': {
-                'whoami': ('--whoami',),
-            }
+            #'flags_estaticas': {}
         },
     },
 }
@@ -178,18 +193,3 @@ solo el PDF resultante después de firmar, por lo que si usted no requiere ni ne
 artefactos separados simplemente puede ignorarlos o borrarlos.
 """,
 }
-
-def load_global():
-    global GLOBAL_CONFIG
-
-    with open(GLOBAL_CONFIG_FILE, "rb") as f:
-        GLOBAL_CONFIG = tomllib.load(f)
-
-def load_current_user():
-    with open(STATE_USERS_FILE, "r") as f:
-        usuarios = json.loads(s=f.read())
-
-    principal_cnf = usuarios['usuarios'].get(usuarios['principal'])['config_file']
-    with open(principal_cnf, "rb") as f:
-        cnf = tomllib.load(f)
-    return cnf
