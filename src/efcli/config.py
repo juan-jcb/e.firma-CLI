@@ -30,11 +30,8 @@ def load_global():
 def load_current_user():
     with open(STATE_USERS_FILE, "r") as f:
         usuarios = json.loads(s=f.read())
-
-    principal_conf = usuarios['usuarios'].get(usuarios['principal'])['config_file']
-    with open(principal_conf, "rb") as f:
-        cnf = tomllib.load(f)
-    return cnf
+    with open(usuarios['usuarios'].get(usuarios['principal'])['config_file'], "rb") as f:
+        return tomllib.load(f)
 
 # Flags estáticas se evaluan en conmutador, las de argumento en sintaxis post-conmutador.
 # Se mantiene la estructura en este diccionario por estetica visual.

@@ -9,10 +9,10 @@ SPANISH = re.compile(r'^[A-Za-zÁÉÍÓÚáéíóúÑñÜü0-9_.-]*(?: [A-Za-zÁ
 # Correos (simple), input vacio permitido.
 CORREOS = re.compile(r'^(?:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})?$')
 
-def input_regex(regex: re.Pattern, mensaje: str, pista: str):
+def input_regex(patron: re.Pattern, mensaje: str, pista: str):
     while True:
         _ = input(mensaje).strip()
-        if not regex.match(_):
+        if not patron.match(_):
             print(f"Entrada inválida. Se permite: {pista}")
             continue
         break

@@ -1,8 +1,8 @@
 import logging
 from efcli import config
-from efcli.firma import firma_individual
 from efcli.utils import sintaxis
-from efcli.xdg import bootstrap
+from efcli.firma import firma_individual
+from efcli.xdg import bootstrap # 2 reglones arriba [INFO] pikepdf C++ to Python logger bridge initialized
 
 logger = logging.getLogger(__name__)
 
@@ -13,13 +13,12 @@ def entrada(sysargv: list):
         if bootstrap.check_env():
             stx = sintaxis.validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['principal'])
             if not isinstance(stx, dict): # Asumiendo entorno válido, el caso funcional principal debería retornar un diccionario vacio.
-                return False
-
+                return
             firma_individual.hacer_firma()
-            return True
+
         else:
             logger.warning("No ha inicializado aún el prorgama (use: 'efcli init').")
-            return False
+            return
 
     # 1. Modulo init
     elif sysargv[1] == 'init':
@@ -33,10 +32,13 @@ def entrada(sysargv: list):
             # Un entorno correcto se evalua 2 veces xd (la primera sin debug, la segunda con debug), pero eh funciona.
             if not bootstrap.check_env():
                 logger.warning("No cuenta con un entorno viable (use: 'efcli init').")
-                return False
+                return
             bootstrap.check_env(log_level=logging.DEBUG)
         
         elif sysargv[2] == '--reset':
+            if not bootstrap.check_env():
+                logger.warning("No cuenta con un entorno viable (use: 'efcli init').")
+                return
             bootstrap.reset_env()
         
         else:

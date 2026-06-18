@@ -1,4 +1,4 @@
-import logging, shutil, json, time
+import logging, time, shutil, json, tomllib
 from pathlib import Path
 
 from efcli import config
@@ -7,7 +7,7 @@ from efcli.utils import cripto, registros, wrappers, regex
 
 logger = logging.getLogger(__name__)
 
-LIVE_ENV_FILES = (config.CONFIG_DIR, config.DATA_DIR, config.STATE_DIR) # GLOBAL_CONFIG_FILE['pdf_ruta_base']
+MAIN_ENV_DIRS = (config.CONFIG_DIR, config.DATA_DIR, config.STATE_DIR) # GLOBAL_CONFIG_FILE['pdf_ruta_base']
 
 def check_env(log_level=logging.INFO):
     '''
@@ -19,7 +19,7 @@ def check_env(log_level=logging.INFO):
     with registros.log_format(target_logger=logger, fmt="[%(levelname)s] %(message)s", level=log_level):
 
         logger.debug('=== ESTRUCTURA XDG ===')
-        for i in LIVE_ENV_FILES:
+        for i in MAIN_ENV_DIRS:
             if Path(i).exists():
                 logger.debug("Existe: '%s'", i)
             else:
@@ -77,31 +77,39 @@ def check_env(log_level=logging.INFO):
 
         return True
 
+@wrappers.salida_limpia()
 def reset_env():
-    # TODO: estaría bueno una función read_env() que lea el entorno y retorne dinámicamente un diccionario
-    # sobre el cual iterar. De momento se hace hardcodeado:
-
-    import tomllib
     with open(config.GLOBAL_CONFIG_FILE, "rb") as f:
         global_config = tomllib.load(f)
 
-    for i in (
-        config.CONFIG_DIR,
-        config.DATA_DIR,
-        config.STATE_DIR,
-        global_config['pdf_ruta_base']
-    ):
+    logger.warning("Esta acción eliminará los directorios del entorno externo con todo su contenido!!")
+    logger.warning("Si realmente desea borrar el entorno antes asegurese de respaldar cualquier archivo importante:\n")
+    print(f"  1. Claves y certificados en: '{config.CONFIG_DIR}'")
+    print(f"  2. Documentos guardados en:  '{global_config['pdf_ruta_base']}'")
+    while True:
+        opcion = input('\n¿Proceder y eliminar? (y/n): ')
+        if opcion == 'y':
+            print('Eliminando...\n')
+            break
+        elif opcion == 'n':
+            print('Saliendo...')
+            return False
+        else:
+            print('Ingrese una opción correcta.')
+
+    for i in (*(MAIN_ENV_DIRS), global_config['pdf_ruta_base']):
         try:
             shutil.rmtree(i)
-            print(f"Directorio borrado: '{i}'")
-        except FileNotFoundError:
-            print(f"El directorio no existe: '{i}'")
-        except PermissionError:
-            print(f"Sin permisos para eliminar: '{i}'")
-        except Exception as e:
-            print(f"Error: {e}")
+            logger.info("Borrado: '%s'", i)
 
-    print('Entorno externo borrado completamente.')
+        except FileNotFoundError:
+            logger.error("El directorio no existe: '%s'", i)
+        except PermissionError:
+            logger.error("Sin permisos para eliminar: '%s'", i)
+        except Exception as e:
+            logger.error("%s", e)
+
+    logger.info("Entorno externo borrado completamente. (inicie uno nuevamente con 'efcli init')")
     return True
 
 @wrappers.salida_limpia()
@@ -263,7 +271,7 @@ si posteriormente lo desea podrá editar, crear nuevos usuarios, borrar ya
 existentes o consultar configuraciones mediante el submodulo 'efcli user'.
 """)
 
-    NOMBRE_USUARIO = regex.input_regex(regex=regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo y puntos.")
+    NOMBRE_USUARIO = regex.input_regex(patron=regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo y puntos.")
 
     time.sleep(1)
     print("\033[H\033[2J", end="")
@@ -405,11 +413,11 @@ saber de quién proviene.
 Puede llenar los campos o dejarlos en blanco a criterio.
 """)
 
-    ID_FIRMA = regex.input_regex(regex=regex.ALFANUMERICO, mensaje="Identificador de la firma: ", pista="Alfanumerico mayus/minus.")
-    NOMBRE_FIRMANTE = regex.input_regex(regex=regex.SPANISH, mensaje="Nombre del firmante: ", pista="Solo caracteres del alfabeto en español.")
-    RAZON = regex.input_regex(regex=regex.SPANISH, mensaje="Razón de firma: ", pista="Solo caracteres del alfabeto en español.")
-    LUGAR = regex.input_regex(regex=regex.SPANISH, mensaje="Lugar de firma: ", pista="Solo caracteres del alfabeto en español.")
-    CONTACTO = regex.input_regex(regex=regex.CORREOS, mensaje="Correo del firmante: ", pista="Solo correos electrónicos.")
+    ID_FIRMA        = regex.input_regex(patron=regex.ALFANUMERICO, mensaje="Identificador de la firma: ", pista="Alfanumerico mayus/minus.")
+    NOMBRE_FIRMANTE = regex.input_regex(patron=regex.SPANISH, mensaje="Nombre del firmante: ", pista="Solo caracteres del alfabeto en español.")
+    RAZON           = regex.input_regex(patron=regex.SPANISH, mensaje="Razón de firma: ", pista="Solo caracteres del alfabeto en español.")
+    LUGAR           = regex.input_regex(patron=regex.SPANISH, mensaje="Lugar de firma: ", pista="Solo caracteres del alfabeto en español.")
+    CONTACTO        = regex.input_regex(patron=regex.CORREOS, mensaje="Correo del firmante: ", pista="Solo correos electrónicos.")
 
     # Con la declaración explcita de los certificados de una PKI se deja de ser dependiente solo al conetxto
     # de la PKI de banxico y se puede operar con cualquier otra siempre que se tengan sus x509 organizados.
@@ -486,34 +494,7 @@ TST_DSS = false
 # debe de ser).
 '''
 
-    # TODO: no me agrada esta estructura.
-    def hacer_dirs() -> None:
-        for i in (
-            config.CONFIG_DIR,
-            config.DATA_DIR,
-            config.STATE_DIR,
-            config.DATA_PKI_DIR,
-            USER_DIR,
-            PDF_RUTA_BASE
-        ):
-            i.mkdir(parents=True, exist_ok=True)
-
-    def seed_config() -> None:
-        with open(config.GLOBAL_CONFIG_FILE, "w") as f: 
-            f.write(skel_global)
-
-        with open(USER_CONFIG_FILE, "w") as f: 
-            f.write(skel_user)
-        
-        shutil.copy2(src=cert_input, dst=CERT_USUARIO)
-        shutil.copy2(src=pkey_input, dst=PKEY_USUARIO)
-        
-        for i in config.PKI_ASSETS:
-            shutil.copy2(src=i, dst=f"{config.DATA_PKI_DIR}/{i.name}")
-
-    hacer_dirs()
-    seed_config()
-
+    # Estructura lógica del entorno externo tras init()
     init_state_programa = {
             'xdg_dirs': {
                 'config_dir': config.CONFIG_DIR.as_posix(),
@@ -541,9 +522,19 @@ TST_DSS = false
             }
         }
 
+    # Poblado de archivos del entorno externo.
+    for i in (*(MAIN_ENV_DIRS), config.DATA_PKI_DIR, USER_DIR, PDF_RUTA_BASE):
+        i.mkdir(parents=True, exist_ok=True)
+    with open(config.GLOBAL_CONFIG_FILE, "w") as f: 
+        f.write(skel_global)
+    with open(USER_CONFIG_FILE, "w") as f: 
+        f.write(skel_user)
+    shutil.copy2(src=cert_input, dst=CERT_USUARIO)
+    shutil.copy2(src=pkey_input, dst=PKEY_USUARIO)
+    for i in config.PKI_ASSETS:
+        shutil.copy2(src=i, dst=f"{config.DATA_PKI_DIR}/{i.name}")
     state_programa = json.dumps(obj=init_state_programa, indent=2, ensure_ascii=False)
     state_usuarios = json.dumps(obj=init_state_usuarios, indent=2, ensure_ascii=False)
-
     with open(config.STATE_FILE, "w") as f:
         f.write(state_programa)
     with open(config.STATE_USERS_FILE, "w") as f:

@@ -623,7 +623,7 @@ def firma(pdfs: list, firmante_ctx: dict):
     return True
 
 def hacer_firma():
-    logger.info("Firmando con configuración defecto.")
+    logger.info("Usando configuración por defecto.")
     config.load_global()
     FIRMANTE_INDIVIDUAL = config.load_current_user()
 
@@ -631,10 +631,10 @@ def hacer_firma():
     pdf_ruta_base = Path(config.GLOBAL_CONFIG['pdf_ruta_base'])
     lista_pdfs = list(pdf_ruta_base.glob(pattern="*.pdf"))
     if not lista_pdfs:
-        logger.warning("No hay material para firmar en: '%s'", Path(config.GLOBAL_CONFIG['pdf_ruta_base']).absolute())
-        logger.info("Añada uno o más documentos .pdf y empiece a firmar (,,¬﹏¬,,)!")
+        logger.warning("No hay material para firmar en: '%s' (,,¬﹏¬,,)!", Path(config.GLOBAL_CONFIG['pdf_ruta_base']).absolute())
+        logger.warning("Añada uno o más documentos .pdf y empiece a firmar!")
         return False
-        
+
     # 1.5 Pre-fima
     lista_pdfs = integridad_pdfs.pre_firma(lista_pdfs=lista_pdfs)
     if not lista_pdfs:
