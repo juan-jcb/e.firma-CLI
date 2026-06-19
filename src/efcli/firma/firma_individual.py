@@ -15,6 +15,7 @@ from pyhanko.pdf_utils.reader import PdfFileReader
 from efcli.pdf import integridad_pdfs, pdf_utils
 from efcli.pki import pki, ocsp, x509_utils
 from efcli.utils import cripto, general, registros, wrappers
+from efcli.xdg import usuarios
 from efcli import config
 
 logger = logging.getLogger(__name__)
@@ -281,7 +282,7 @@ def firma(pdfs: list, firmante_ctx: dict):
     print()
     logger.info("Iniciando sesión de firma.")
     ini_time = perf_counter()
-    with registros.log_format(target_logger=logger, fmt="[%(levelname)s] (%(asctime)s) %(message)s"):
+    with registros.modded_logs(target_logger=logger, fmt="[%(levelname)s] (%(asctime)s) %(message)s"):
 
         if USAR_OCSP == True:
             print()
@@ -623,9 +624,8 @@ def firma(pdfs: list, firmante_ctx: dict):
     return True
 
 def hacer_firma():
-    logger.info("Usando configuración por defecto.")
     config.load_global()
-    FIRMANTE_INDIVIDUAL = config.load_current_user()
+    FIRMANTE_INDIVIDUAL = usuarios.load_current_user_conf()
 
     # 1. Evaluar que el material a firmar sea viable antes de cualquier otra cosa, evidentemente (¬_¬").
     pdf_ruta_base = Path(config.GLOBAL_CONFIG['pdf_ruta_base'])

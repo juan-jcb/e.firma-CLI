@@ -31,7 +31,12 @@ logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 @contextmanager
-def log_format(fmt: str, target_logger: logging.Logger=None, level=logging.INFO, formatter_class=ColorFormatter):
+def modded_logs(
+    target_logger: logging.Logger=None,
+    fmt: str = "[%(levelname)s] %(message)s",
+    level=logging.INFO,
+    formatter_class=ColorFormatter
+):
     """
     Cambia temporalmente el formato del logger mientras se esté dentro de cualquier
     `with`, y al salir del bloque se restaura el formato original automáticamente.

@@ -2,7 +2,7 @@ import logging
 from efcli import config
 from efcli.utils import sintaxis
 from efcli.firma import firma_individual
-from efcli.xdg import bootstrap # 2 reglones arriba [INFO] pikepdf C++ to Python logger bridge initialized
+from efcli.xdg import bootstrap, usuarios # 2 reglones arriba [INFO] pikepdf C++ to Python logger bridge initialized
 
 logger = logging.getLogger(__name__)
 
@@ -14,13 +14,14 @@ def entrada(sysargv: list):
             stx = sintaxis.validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['principal'])
             if not isinstance(stx, dict): # Asumiendo entorno válido, el caso funcional principal debería retornar un diccionario vacio.
                 return
+            logger.info("Usando configuración por defecto (%s).", usuarios.load_state_users()['principal'])
             firma_individual.hacer_firma()
 
         else:
             logger.warning("No ha inicializado aún el prorgama (use: 'efcli init').")
             return
 
-    # 1. Modulo init
+    # 1. Submodulo init
     elif sysargv[1] == 'init':
         if len(sysargv) == 2:
             if bootstrap.check_env():
@@ -34,16 +35,41 @@ def entrada(sysargv: list):
                 logger.warning("No cuenta con un entorno viable (use: 'efcli init').")
                 return
             bootstrap.check_env(log_level=logging.DEBUG)
-        
+
         elif sysargv[2] == '--reset':
             if not bootstrap.check_env():
                 logger.warning("No cuenta con un entorno viable (use: 'efcli init').")
                 return
             bootstrap.reset_env()
-        
+
         else:
             logger.warning("Ingrese una opción válida, vea opciones de modulo init con (efcli -h)")
+            return
+
+    # 2. Submodulo user
+    elif sysargv[1] == 'user':
+        if len(sysargv) == 2:
+            logger.warning("Ingrese una opción válida, vea opciones de modulo user con (efcli -h)")
             return None
+
+        match sysargv[2]:
+            case '--whoami':
+                usuarios.print_current_user()
+            case '--list':
+                usuarios.list_users()
+            case '--change':
+                usuarios.change_user()
+            case '--add':
+                usuarios.add_user()
+            case '--del':
+                usuarios.del_user()
+            case '--conf':
+                usuarios.print_current_user_conf()
+            case '--toml':
+                usuarios.print_current_user_rawconf()
+            case _:
+                logger.warning("Ingrese una opción válida, vea opciones de modulo user con (efcli -h)")
+                return None
 
     elif sysargv[1] == 'oscp':
         pass

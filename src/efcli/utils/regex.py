@@ -1,5 +1,7 @@
 import re
 
+# Solo numerico.
+NUMERICO = re.compile(r'^[0-9]+$')
 # Alfanumérico, input vacio permitido
 ALFANUMERICO = re.compile(r'^[A-Za-z0-9]*$')
 # Alfanumérico, puntos, guiones medio/bajo, espacios entremedias, sin espacios al inicio/final.

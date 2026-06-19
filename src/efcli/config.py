@@ -1,4 +1,4 @@
-import os, efcli, tomllib, json
+import os, efcli, tomllib
 from pathlib import Path
 
 APP = "efcli"
@@ -26,12 +26,6 @@ def load_global():
     global GLOBAL_CONFIG
     with open(GLOBAL_CONFIG_FILE, "rb") as f:
         GLOBAL_CONFIG = tomllib.load(f)
-
-def load_current_user():
-    with open(STATE_USERS_FILE, "r") as f:
-        usuarios = json.loads(s=f.read())
-    with open(usuarios['usuarios'].get(usuarios['principal'])['config_file'], "rb") as f:
-        return tomllib.load(f)
 
 # Flags estáticas se evaluan en conmutador, las de argumento en sintaxis post-conmutador.
 # Se mantiene la estructura en este diccionario por estetica visual.
@@ -69,6 +63,8 @@ FLAGS = {
             #'flags_de_argumento': {},
             'flags_estaticas': {
                 'whoami': ('--whoami',),
+                'conf': ('--conf',),
+                'raw_conf': ('--raw-conf',),
             }
         },
 
@@ -111,10 +107,10 @@ MENSAJES_MISC = {
 
     'help': f"""e.firma CLI {VERSION}, Solución de firma digital PAdES para la PKI del Banco de México.
 
-Uso principal:
+Uso principal (con entorno válido):
 
-    efcli                           (sin opciones: firma con la configuración del usuario actual)
-    efcli -f FILE [opciones] ...    (con opciones: firma con sobreescritura temporal de config para las opciones explicitas)
+    efcli                           (sin opciones) Firma cualquier .pdf en el directorio de firmas con la configuración del usuario principal.
+    efcli -f FILE [opciones] ...    (con opciones) Firma con sobreescritura temporal de configuración para las opciones explicitas.
 
 Uso de submodulos:
 
@@ -132,8 +128,18 @@ Firma:
 Submodulo INIT:
 
   init                      Inicialización: Entorno externo, rutas XDG, perfiles, config. Usar tras instalación o reset.
-  init --reset              Eliminación completa del entorno externo. Usar antes de desinstalar o reconfigurar con 'init'.
+  init --reset              Eliminación completa del entorno externo. Usar antes de desinstalar o para reconfigurar con 'init'.
   init --check              Comprobación de integridad del entorno externo.
+
+Submodulo USER:
+
+  user --add                Añadir un nuevo usuario local (prompt interactivo).
+  user --del                Borrar un usuario local (prompt interactivo).
+  user --change             Cambiar de usuario principal (prompt interactivo).
+
+  user --whoami             Imprime el nombre del usuario principal y su certificado X.509 asoociado.
+  user --conf               Imprime la configuración del usuario principal simplificada.
+  user --toml               Imprime la configuración del usuario principal en su formato original TOML.
 
 Submodulo OCSP:
 
