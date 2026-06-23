@@ -42,13 +42,6 @@ FLAGS = {
             'T': 2,
             'A': 3,
         },
-
-        'miscelanea': {
-            'debug': ('-d', '--debug',),
-            'quiet': ('-q', '--quiet',),
-            'help': ('-h', '--help',),
-            'version': ('-v', '--version',),
-        },
     },
 
     'submodulos': {
@@ -70,11 +63,14 @@ FLAGS = {
 
         'ocsp': {
             'flags_de_argumento': {
-                'query': ('--query',),
+                'request': ('--request',),
                 'validez': ('--validez',),
                 'parse': ('--parse',),
             },
-            #'flags_estaticas': {}
+            'flags_estaticas': {
+                'request': ('--request',),
+            }
+            
         },
         'tsa': {
             'flags_de_argumento': {
@@ -89,6 +85,14 @@ FLAGS = {
             #'flags_estaticas': {}
         },
     },
+
+    'miscelanea': {
+        'debug': ('-d', '--debug',),
+        'quiet': ('-q', '--quiet',),
+        'help': ('-h', '--help',),
+        'version': ('-v', '--version',),
+    },
+
 }
 
 MENSAJES_MISC = {
@@ -115,10 +119,10 @@ Uso principal (con entorno válido):
 Uso de submodulos:
 
     efcli init [opciones] ...
+    efcli user [opciones] ...
     efcli ocsp [opciones] ...
     efcli tsa  [opciones] ...
     efcli pdf  [opciones] ...
-    efcli user [opciones] ...
 
 Firma:
 
@@ -138,12 +142,13 @@ Submodulo USER:
   user --change             Cambiar de usuario principal (prompt interactivo).
 
   user --whoami             Imprime el nombre del usuario principal y su certificado X.509 asoociado.
+  user --list               Imprime listado con todos los usuarios del programa.
   user --conf               Imprime la configuración del usuario principal simplificada.
   user --toml               Imprime la configuración del usuario principal en su formato original TOML.
 
 Submodulo OCSP:
 
-  ocsp --query CERT         Nueva consulta OCSP para 'CERT' con el responder por defecto.
+  ocsp --request CERT       Nueva consulta OCSP para 'CERT' con el responder por defecto.
   ocsp --validez RESP       Imprimir el estado de un x509 (good, revoked) desde una respuesta OCSP (DER o PEM).
   ocsp --parse RESP         Imprimir en texto legible una respuesta OCSP completa (DER o PEM).
 
@@ -156,9 +161,6 @@ Submodulo PDF:
   pdf --firmas PDF          Imprimir el historial de firmas de un PDF.
 
 Miscelánea:
-
-  -d,  --debug              Muestra información más detallada sobre el proceso.
-  -q,  --quiet              Limita la salida solo a resultados.
 
   -h,  --help               Imprime éste menú de ayuda.
   -v,  --version            Imprimir la versión actual.

@@ -16,6 +16,8 @@ from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers, fields
 
+from efcli.utils.wrappers import salida_limpia
+
 logger = logging.getLogger(__name__)
 
 def normalizar_pdf(archivo_obj: Path, pdf_stream: BytesIO) -> Path | None:
@@ -26,12 +28,13 @@ def normalizar_pdf(archivo_obj: Path, pdf_stream: BytesIO) -> Path | None:
         original_normalizado = pike_open(filename_or_stream=pdf_stream)
         original_normalizado.save(filename_or_stream=nuevo)
     except Exception:
-        print(f"[{Fore.RED}ERROR{Fore.WHITE}] No pudo normalizarse PDF: {nuevo.name}. Saliendo...")
+        logger.error("No pudo normalizarse PDF: %s. Saliendo...", nuevo.name)
         return None
     else:
         print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Válido: {nuevo.name}")
         return nuevo
 
+@salida_limpia()
 def pre_firma(lista_pdfs: list) -> list | bool:
     '''
     Función de comprobación sobre la viabilidad de firma en el/los PDFs originales.
@@ -46,7 +49,7 @@ def pre_firma(lista_pdfs: list) -> list | bool:
     y guardado para el/los PDFs en cuestión y posteriormente firmar solo el contenido
     normalizado en el orden originalmente propuesto.
 
-    Esta función se vuelve indispensable en caso de firmar PDFs por lote; donde se
+    Esta función se vuelve notoriamente útil en firma de PDFs por lote; donde se
     necesita certeza de integridad sobre los archivos antes de firmarlos en bucle
     y tener una sesión de firma exitosa independientemente de la cantidad de material
     a firmar.
@@ -105,7 +108,7 @@ def pre_firma(lista_pdfs: list) -> list | bool:
         subfilter=fields.SigSeedSubFilter.PADES,
     )
 
-    print(f"[{Fore.CYAN}INFO{Fore.WHITE}] Evaluando la integridad de los PDFs...")
+    logger.info("Evaluando la integridad de los PDFs...")
     for i in lista_pdfs:
         dummy_stream = BytesIO()
 
@@ -142,23 +145,19 @@ def pre_firma(lista_pdfs: list) -> list | bool:
             
             # Excepts de errores relacionados con PDFs. (SigningError, UnicodeDecodeError)
             except Exception as e:
-                print(f'[{Fore.LIGHTYELLOW_EX}ADVERTENCIA{Fore.WHITE}] Invalido: {i.name} ({e})')
-                print(f'[{Fore.LIGHTYELLOW_EX}ADVERTENCIA{Fore.WHITE}] Puede corregir creando un PDF *nuevo* con el contenido visual del original y firmar ese en su lugar.\n')
+                logger.warning("Invalido: %s (%s)", i.name, e)
+                logger.warning("Puede corregir creando un PDF *nuevo* con el contenido visual del original y firmar ese en su lugar.\n")
 
-                try:
-                    while True:
-                        opcion = input(f'Reparar {i.name}? (y/n): ')
-                        if opcion == 'y' :
-                            print('Reparando...\n')
-                            break
-                        elif opcion == 'n':
-                            print(f"No es posible firmar en este estado. Saliendo...")
-                            return False
-                        else:
-                            print('Ingrese una opción correcta.')
-                except KeyboardInterrupt:
-                    print("\n\nSaliendo...")
-                    return False
+                while True:
+                    opcion = input(f'Reparar {i.name}? (y/n): ')
+                    if opcion == 'y' :
+                        print('Reparando...\n')
+                        break
+                    elif opcion == 'n':
+                        print(f"No es posible firmar en este estado. Saliendo...")
+                        return False
+                    else:
+                        print('Ingrese una opción correcta.')
 
                 nuevo_path = normalizar_pdf(archivo_obj=i, pdf_stream=f_stream)
                 if nuevo_path == False:
@@ -174,11 +173,11 @@ def pre_firma(lista_pdfs: list) -> list | bool:
                         lista_pdfs.pop(lista_pdfs.index(nuevo_path))
 
                     indice = lista_pdfs.index(i)
-                    lista_pdfs[indice] = (nuevo_path, siguiente_firma) # sustituye con tupla: PDF normalizado + siguiente indice de firma
+                    lista_pdfs[indice] = (nuevo_path, siguiente_firma) # sustituye con tupla: (PDF normalizado, siguiente indice de firma)
 
             else:
                 indice = lista_pdfs.index(i)
-                lista_pdfs[indice] = (i, siguiente_firma) # sustituye con tupla: PDF original + siguiente indice de firma
+                lista_pdfs[indice] = (i, siguiente_firma) # sustituye con tupla: (PDF original, siguiente indice de firma)
 
                 print(f'[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Válido: {i.name}')
 

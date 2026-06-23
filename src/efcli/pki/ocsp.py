@@ -205,7 +205,7 @@ def leer_ocsp_response(der_bytes: bytes) -> str:
 
     if resp.produced_at_utc:
         day = str(resp.produced_at_utc.day).rjust(2)
-        produced_at_utc = resp.produced_at_utc.strftime(f"%b {day} %H:%M:%S %Y GMT")
+        produced_at_utc = resp.produced_at_utc.strftime(f"%b {day} %H:%M:%S %Y UTC")
         lines.append(f"    Produced At: {produced_at_utc}")
 
     lines.append(f"    Responses:")
@@ -226,17 +226,17 @@ def leer_ocsp_response(der_bytes: bytes) -> str:
 
     if resp.certificate_status == crypto_ocsp.OCSPCertStatus.REVOKED:
         day = str(resp.revocation_time_utc.day).rjust(2)
-        rev_time = resp.revocation_time_utc.strftime(f"%b {day} %H:%M:%S %Y GMT")
+        rev_time = resp.revocation_time_utc.strftime(f"%b {day} %H:%M:%S %Y UTC")
         lines.append(f"    Revocation Time: {rev_time}")
         if resp.revocation_reason:
             lines.append(f"    Revocation Reason: {resp.revocation_reason.value}")
 
     if resp.this_update_utc:
         day = str(resp.this_update_utc.day).rjust(2)
-        lines.append(f"    This Update: {resp.this_update_utc.strftime(f'%b {day} %H:%M:%S %Y GMT')}")
+        lines.append(f"    This Update: {resp.this_update_utc.strftime(f'%b {day} %H:%M:%S %Y UTC')}")
     if resp.next_update_utc:
         day = str(resp.next_update_utc.day).rjust(2)
-        lines.append(f"    Next Update: {resp.next_update_utc.strftime(f'%b {day} %H:%M:%S %Y GMT')}")
+        lines.append(f"    Next Update: {resp.next_update_utc.strftime(f'%b {day} %H:%M:%S %Y UTC')}")
 
     sig_alg_name = resp.signature_hash_algorithm.name if resp.signature_hash_algorithm else "unknown"
     lines.append(f"    Signature Algorithm: {sig_alg_name}WithRSAEncryption")
@@ -249,3 +249,115 @@ def leer_ocsp_response(der_bytes: bytes) -> str:
         lines.append(f"        {chunk}:")
 
     return "\n".join(lines)
+
+# Funciones de submodulo ocsp, no estoy del todo seguro si lo más adecuado es ubicarlas aquí o en un modulo en su dir propio
+
+def parse_ocsp(resp_file: str):
+    from pathlib import Path
+    if not isinstance(resp_file, str):
+        logger.error("Formato incorrecto de argumento ingresado. Saliendo...")
+        return False
+    if not Path(resp_file).exists():
+        logger.error("El archivo inidicado no existe. Saliendo...")
+        return False
+    with open(resp_file, "rb") as f:
+        resp_bytes = f.read()
+
+    try:
+        resp = crypto_ocsp.load_der_ocsp_response(data=resp_bytes)
+    except Exception as e:
+        logger.error("No es una respuesta OCSP (DER) (%s)", e)
+        return False
+    else:
+        print(leer_ocsp_response(der_bytes=resp_bytes))
+
+def imprimir_estado(resp_file: str):
+    from pathlib import Path
+    from colorama import Fore
+    if not isinstance(resp_file, str):
+        logger.error("Formato incorrecto de argumento ingresado. Saliendo...")
+        return False
+    if not Path(resp_file).exists():
+        logger.error("El archivo inidicado no existe. Saliendo...")
+        return False
+    with open(resp_file, "rb") as f:
+        resp_bytes = f.read()
+
+    try:
+        resp = crypto_ocsp.load_der_ocsp_response(data=resp_bytes)
+    except Exception as e:
+        logger.error("No es una respuesta OCSP (DER) (%s)", e)
+        return False
+    else:
+        day = str(resp.produced_at_utc.day).rjust(2)
+        fecha_respuesta = resp.this_update_utc.strftime(f'%H:%M:%S {day} %b %Y UTC')
+
+        if resp.certificate_status == crypto_ocsp.OCSPCertStatus.GOOD:
+            print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Certificado vigente.")
+            print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Confirmado con fecha: {fecha_respuesta}")
+        elif resp.certificate_status == crypto_ocsp.OCSPCertStatus.REVOKED:
+            logger.warning("Certificado REVOCADO.")
+            logger.warning("Revocado en fecha: %s", fecha_respuesta)
+        elif resp.certificate_status == crypto_ocsp.OCSPCertStatus.UNKNOWN:
+            logger.error("Estado del certificado DESCONOCIDO.")
+        else:
+            pass
+
+def nueva_request(propia: bool = False, cert_file: str = None):
+    import time
+    from pathlib import Path
+    from colorama import Fore
+    from efcli.utils import general
+    from efcli.pki.x509_utils import cargar_cert_asn1, leer_subject_simple, leer_campo_en_subject
+    from efcli.pki.pki import get_validation_context, get_ca_chain
+    from efcli.xdg.usuarios import load_current_user_conf
+    from efcli import config
+
+    config.load_global()
+    trust_roots       = config.GLOBAL_CONFIG['PKI']['trust_roots']
+    intermediate_cas  = config.GLOBAL_CONFIG['PKI']['intermediate_cas']
+    endpoints         = config.GLOBAL_CONFIG['OCSP']['endpoints']
+    added_name = ''
+
+    if propia:
+        cert_file = load_current_user_conf()['firmante']['certificado']
+        added_name = '(CERT DE PRINCIPAL)'
+
+    if not isinstance(cert_file, str):
+        logger.error("Formato incorrecto de argumento ingresado. Saliendo...")
+        return False
+    if not Path(cert_file).exists():
+        logger.error("El archivo inidicado no existe. Saliendo...")
+        return False
+    with open(cert_file, "rb") as f:
+        cert_bytes = f.read()
+
+    cert, encode = cargar_cert_asn1(cert=cert_bytes)
+    cn = leer_campo_en_subject(subject=cert.subject, field="common_name")
+    sujeto = leer_subject_simple(cert=cert)
+    pki_ctx = get_validation_context(trust_roots=trust_roots, intermediate_cas=intermediate_cas)
+    chain = get_ca_chain(cert=cert, tipo="firmante", pki_ctx=pki_ctx)
+    request = coinstruir_OCSPRequest(cert_client=chain[-1], cert_issuer=chain[-2])
+    # Mientras la estrucutra de la cadena se mantenga constante la numeración dura del indice funciona.
+
+    logger.info("Iniciando Petición OCSP: %s (%s) %s", sujeto, encode, added_name)
+    for i in endpoints:
+        response = fetch_ocsp(ocsp_request=request, endpoint=i)
+        if response:
+            print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] El endpoint ha respondido!")
+            break
+
+    if response:
+        logger.info("Parseando y guardando...")
+        nombre = f"{cn}.OCSP.{int(time.time())}"
+        archivo_binario = {nombre: response.dump()}
+        archivo_plano   = {nombre: leer_ocsp_response(der_bytes=response.dump()).encode('utf-8')} # se escribe bytes
+    else:
+        logger.error("No fue posible comunicarse con el endpoint OCSP, no se pudo determinar el estado del certificado.")
+        return False
+
+    general.guardar_archivos(".", "der", **archivo_binario)
+    general.guardar_archivos(".", "txt", **archivo_plano)
+    logger.info("Revise los archivos!")
+    logger.info("'%s.der'", nombre)
+    logger.info("'%s.txt'", nombre)

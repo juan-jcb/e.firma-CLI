@@ -19,6 +19,7 @@ from efcli.xdg import usuarios
 from efcli import config
 
 logger = logging.getLogger(__name__)
+USUARIO_PRINCIPAL = usuarios.load_state_users()['principal']
 
 @wrappers.salida_limpia()
 def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
@@ -247,7 +248,7 @@ def firma(pdfs: list, firmante_ctx: dict):
     Operaciones dependientes de desfase temporal.
     '''
     RUTA_BASE = config.GLOBAL_CONFIG['pdf_ruta_base']
-    DIR_SESION_FIRMA = Path(f'{RUTA_BASE}/Sesión de Firma - {datetime.now().strftime("%a %b %d %I:%M:%S %p %Y")}')
+    DIR_SESION_FIRMA = Path(f'{RUTA_BASE}/({USUARIO_PRINCIPAL}) Sesión de Firma - {datetime.now().strftime("%a %b %d %I:%M:%S %p %Y")}')
     DIR_SESION_FIRMA.mkdir(parents=True)
     PDFs = pdfs
 
@@ -624,6 +625,7 @@ def firma(pdfs: list, firmante_ctx: dict):
     return True
 
 def hacer_firma():
+    logger.info("Usando configuración por defecto (%s).", USUARIO_PRINCIPAL)
     config.load_global()
     FIRMANTE_INDIVIDUAL = usuarios.load_current_user_conf()
 

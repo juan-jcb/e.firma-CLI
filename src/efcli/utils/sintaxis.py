@@ -1,5 +1,5 @@
 import logging
-from efcli.config import MENSAJES_MISC
+from efcli import config
 
 logger = logging.getLogger(__name__)
 
@@ -102,28 +102,16 @@ def validar_sintaxis(args_posicionales: list, modulo: dict) -> dict:
     
     # 5.1  Óden de prioridad: flags de help y de version tienen prioridad sobre otras para mostrar su output.
     for flag in flags_funcionales:
-        if flag in programa_flags['help']:
-            print(MENSAJES_MISC['help'])
+        if flag in config.FLAGS['miscelanea']['help']:
+            print(config.MENSAJES_MISC['help'])
             return False
-        if flag in programa_flags['version']:
-            print(MENSAJES_MISC['banner'])
+        if flag in config.FLAGS['miscelanea']['version']:
+            print(config.MENSAJES_MISC['banner'])
             return False
     
     opciones_validas = {}
 
-    # 5.2 revisión de las flags de codificación.
-    for flag in flags_funcionales:
-        # esto técnicamente debería de ir en "argumentos.py", sin embargo la validación es sobre sintaxis de una combinación de argumentos
-        # posicionales, no sobre la funcionalidad subyacente de dichos argumentos.
-        if flag == '--raw' and ('-o' not in flags_funcionales and '--output' not in flags_funcionales):
-            logger.error('NO proporcionó un archivo de SALIDA "-o" para clave binaria "--raw". Por favor especifique uno.')
-            return False
-        
-        if flag in programa_flags['codificacion']:
-            codec = flag.lstrip('-')
-            opciones_validas[flag] = codec
-
-    # 5.3 revisión sintactica de las flags que reciben argumentos; revisión sobre LOS ARGUMENTOS.
+    # 5.2 revisión sintactica de las flags que reciben argumentos; revisión sobre LOS ARGUMENTOS.
     for flag in flags_funcionales:
         # Para flags de argumento: Se descartan argumentos sintacticamente invalidos. Esto NO evalua si el contenido del argumento es
         # FUNCIONAL para la flag, solo se prueba y descarta sintaxis general erronea en los argumentos recibidos.
@@ -143,8 +131,6 @@ def validar_sintaxis(args_posicionales: list, modulo: dict) -> dict:
                     return False
                 else:
                     opciones_validas[flag] = argumento_de_flag
-
-    # 5.4 Para flags de comportamiento especial ... blah blah blah
     
     # 5.5 Input minimo viable.
     # 

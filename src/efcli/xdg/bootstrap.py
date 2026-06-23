@@ -77,6 +77,7 @@ def check_env(log_level=logging.INFO):
         return True
 
 @wrappers.salida_limpia()
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def reset_env():
     with open(config.GLOBAL_CONFIG_FILE, "rb") as f:
         global_config = tomllib.load(f)
@@ -112,6 +113,7 @@ def reset_env():
     return True
 
 @wrappers.salida_limpia()
+@wrappers.eval(fn_condicion=check_env, si_false="Ya existe un entorno válido! (si quiere revisarlo: 'efcli init --check')")
 def init():
     import time
     print("CONFIGURACIÓN INICIAL.\n")

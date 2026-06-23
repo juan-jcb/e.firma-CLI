@@ -34,7 +34,7 @@ def new_user(mensajes: dict, es_init: bool = False):
 
         # 2. Evaluar que no existan nombres repetidos
         while True:
-            NOMBRE_USUARIO = regex.input_regex(patron=regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo y puntos.")
+            NOMBRE_USUARIO = regex.input_regex(patron=regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo, puntos y espacios intermedios.")
             # TODO: en una base de datos real esto sería malardo, pero de momento no contemplo más de 10 entradas en JSON para usuarios.
             if not NOMBRE_USUARIO in (i for i in users['usuarios']):
                 break
@@ -50,6 +50,7 @@ def new_user(mensajes: dict, es_init: bool = False):
     USER_CONFIG_FILE = USER_DIR / f"{NOMBRE_USUARIO}.toml"
 
     # 3. archivos de e.firma
+    # TODO: evaluar que el cert ingresado pertenezca a la PKI de Banxico. si no, salir con mensaje informativo.
     print(mensajes['archivos_efirma'])
     while True:
         cert_input = Path(input("Ruta absoluta del certificado del firmante (.cer): "))
@@ -228,7 +229,7 @@ def print_current_user_conf():
         logger.debug("Sello de tiempo en PDF (A): %s", cnf['preferencias']['TST_DSS'])
 
 @wrappers.eval(fn_condicion=bootstrap.check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
-def print_current_user_rawconf():
+def print_current_user_toml():
     users = load_state_users()
     with open(users['usuarios'].get(users['principal'])['config_file'], "r") as f:
         print(f.read())
@@ -356,4 +357,35 @@ def change_user():
     with open(STATE_USERS_FILE, "w") as f:
         f.write(updated_users)
 
+    print()
+    logger.info("Bienvenido '%s'!", seleccionado)
     return True
+
+#def change_username():
+#    users = load_state_users()
+#
+#    logger.info("=== Usuarios Actuales ===")
+#    logger.info("Principal: %s", users['principal'])
+#    for idx, i in enumerate(iterable=users['usuarios'].keys(), start=1):
+#        logger.info("%s: %s", idx, i)
+#
+#    print()
+#    while True:
+#        opcion = int(regex.input_regex(patron=regex.NUMERICO, mensaje="Ingrese el n° de usuario al que desea cambiar nombre: ", pista="Solo números naturales positivos."))
+#        if opcion == 0 or opcion > idx: # idx es lo mismo que len() sobre los usuarios
+#            logger.warning("No existe un usuario con ese número. Vuelva a ingresarlo.")
+#        else:
+#            seleccionado = list(users['usuarios'].keys())[opcion - 1] # -1 por el start en enumerate
+#            break
+#
+#    while True:
+#        nuevo_nombre = regex.input_regex(patron=regex.ASCII_SIMPLE, mensaje="Nuevo nombre: ", pista="Alfanumerico mayus/minus, guiones medio, bajo, puntos y espacios intermedios.")
+#        if not nuevo_nombre in (i for i in users['usuarios']):
+#            break
+#        logger.warning("El usuario ingresado YA EXISTE. Ingrese uno diferente!")    
+#
+#    users['usuarios'][seleccionado] = nuevo_nombre
+#    if seleccionado == users['principal']:
+#        users['principal'] = nuevo_nombre
+#    
+#    # TODO: TERMINAAAR
