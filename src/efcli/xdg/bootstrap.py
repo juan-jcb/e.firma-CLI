@@ -1,13 +1,12 @@
 import logging, shutil, json, tomllib
 from pathlib import Path
 
-from efcli import config
-from efcli.utils import registros, wrappers
-from efcli.xdg import usuarios, mensajes
+from efcli.core import registros, wrappers
+from . import xdg_config, usuarios, mensajes
 
 logger = logging.getLogger(__name__)
 
-MAIN_ENV_DIRS = (config.CONFIG_DIR, config.DATA_DIR, config.STATE_DIR) # GLOBAL_CONFIG_FILE['pdf_ruta_base']
+MAIN_ENV_DIRS = (xdg_config.CONFIG_DIR, xdg_config.DATA_DIR, xdg_config.STATE_DIR) # GLOBAL_CONFIG_FILE['pdf_ruta_base']
 
 def check_env(log_level=logging.INFO):
     '''
@@ -27,13 +26,13 @@ def check_env(log_level=logging.INFO):
                 return False
 
         logger.debug('=== ARCHIVOS DE ESTADO ===')
-        if Path(config.STATE_FILE).exists() and Path(config.STATE_USERS_FILE).exists():
-            logger.debug("Existe: '%s'", config.STATE_FILE)
-            logger.debug("Existe: '%s'", config.STATE_USERS_FILE)
+        if Path(xdg_config.STATE_FILE).exists() and Path(xdg_config.STATE_USERS_FILE).exists():
+            logger.debug("Existe: '%s'", xdg_config.STATE_FILE)
+            logger.debug("Existe: '%s'", xdg_config.STATE_USERS_FILE)
 
 
             logger.debug("=== COHERENCIA DEL ENTORNO ===")
-            with open(config.STATE_FILE, "r") as f:
+            with open(xdg_config.STATE_FILE, "r") as f:
                 programa = json.loads(s=f.read())
 
             for d in programa['xdg_dirs'].values():
@@ -58,7 +57,7 @@ def check_env(log_level=logging.INFO):
                     return False
                 
             logger.debug("=== USUARIOS ===")
-            with open(config.STATE_USERS_FILE, "r") as f:
+            with open(xdg_config.STATE_USERS_FILE, "r") as f:
                 usuarios = json.loads(s=f.read())
 
             logger.debug("Principal: %s", usuarios['principal'])
@@ -79,12 +78,12 @@ def check_env(log_level=logging.INFO):
 @wrappers.salida_limpia()
 @wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def reset_env():
-    with open(config.GLOBAL_CONFIG_FILE, "rb") as f:
+    with open(xdg_config.GLOBAL_CONFIG_FILE, "rb") as f:
         global_config = tomllib.load(f)
 
     logger.warning("Esta acción eliminará los directorios del entorno externo con todo su contenido!!")
     logger.warning("Si realmente lo desea borrar asegurese antes de respaldar cualquier archivo importante:\n")
-    print(f"  1. Claves y certificados en: '{config.CONFIG_DIR}'")
+    print(f"  1. Claves y certificados en: '{xdg_config.CONFIG_DIR}'")
     print(f"  2. Documentos guardados en:  '{global_config['pdf_ruta_base']}'")
     while True:
         opcion = input('\n¿Eliminar entorno externo? (y/n): ')
@@ -113,7 +112,6 @@ def reset_env():
     return True
 
 @wrappers.salida_limpia()
-@wrappers.eval(fn_condicion=check_env, si_false="Ya existe un entorno válido! (si quiere revisarlo: 'efcli init --check')")
 def init():
     import time
     print("CONFIGURACIÓN INICIAL.\n")
@@ -156,8 +154,8 @@ def init():
 pdf_ruta_base = "{PDF_RUTA_BASE}"
 
 [PKI]
-trust_roots = "{config.DATA_PKI_DIR / 'banxico_root_bundle.pem'}"
-intermediate_cas = "{config.DATA_PKI_DIR / 'sat_intermedia_bundle.pem'}"
+trust_roots = "{xdg_config.DATA_PKI_DIR / 'banxico_root_bundle.pem'}"
+intermediate_cas = "{xdg_config.DATA_PKI_DIR / 'sat_intermedia_bundle.pem'}"
 
 [OCSP]
 endpoints = [
@@ -177,17 +175,17 @@ DSS_HASH = "sha384"
     # Estructura lógica del entorno externo tras init()
     init_state_programa = {
             'xdg_dirs': {
-                'config_dir': config.CONFIG_DIR.as_posix(),
-                'data_dir': config.DATA_DIR.as_posix(),
-                'state_dir': config.STATE_DIR.as_posix(),
+                'config_dir': xdg_config.CONFIG_DIR.as_posix(),
+                'data_dir': xdg_config.DATA_DIR.as_posix(),
+                'state_dir': xdg_config.STATE_DIR.as_posix(),
             },
 
             'custom_dirs': {
                 'pdf_ruta_base': PDF_RUTA_BASE.as_posix(),
-                'data_pki_dir': config.DATA_PKI_DIR.as_posix(),
+                'data_pki_dir': xdg_config.DATA_PKI_DIR.as_posix(),
             },
 
-            'assets': [f"{config.DATA_PKI_DIR}/{i.name}" for i in config.PKI_ASSETS]
+            'assets': [f"{xdg_config.DATA_PKI_DIR}/{i.name}" for i in xdg_config.PKI_ASSETS]
         }
 
     init_state_usuarios = {
@@ -203,19 +201,19 @@ DSS_HASH = "sha384"
         }
 
     # Poblado de archivos del entorno externo.
-    for i in (*(MAIN_ENV_DIRS), config.DATA_PKI_DIR, USER_DIR, PDF_RUTA_BASE):
+    for i in (*(MAIN_ENV_DIRS), xdg_config.DATA_PKI_DIR, USER_DIR, PDF_RUTA_BASE):
         i.mkdir(parents=True, exist_ok=True)
-    with open(config.GLOBAL_CONFIG_FILE, "w") as f: 
+    with open(xdg_config.GLOBAL_CONFIG_FILE, "w") as f: 
         f.write(SKEL_GLOBAL)
     with open(USER_CONFIG_FILE, "w") as f: 
         f.write(SKEL_USER)
     shutil.copy2(src=cert_input, dst=CERT_USUARIO)
     shutil.copy2(src=pkey_input, dst=PKEY_USUARIO)
-    for i in config.PKI_ASSETS:
-        shutil.copy2(src=i, dst=f"{config.DATA_PKI_DIR}/{i.name}")
+    for i in xdg_config.PKI_ASSETS:
+        shutil.copy2(src=i, dst=f"{xdg_config.DATA_PKI_DIR}/{i.name}")
     state_programa = json.dumps(obj=init_state_programa, indent=2, ensure_ascii=False)
     state_usuarios = json.dumps(obj=init_state_usuarios, indent=2, ensure_ascii=False)
-    with open(config.STATE_FILE, "w") as f:
+    with open(xdg_config.STATE_FILE, "w") as f:
         f.write(state_programa)
-    with open(config.STATE_USERS_FILE, "w") as f:
+    with open(xdg_config.STATE_USERS_FILE, "w") as f:
         f.write(state_usuarios)

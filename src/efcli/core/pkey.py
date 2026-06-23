@@ -1,6 +1,6 @@
+from pathlib import Path
 from cryptography.hazmat.primitives.serialization import load_der_private_key, load_pem_private_key
 from asn1crypto.cms import ContentInfo
-from pathlib import Path
 #from asn1crypto.tsp import TSTInfo
 
 def es_pkey_cifrada(pkey: str | Path) -> tuple[bool, str]:

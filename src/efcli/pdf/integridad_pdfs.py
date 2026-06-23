@@ -11,12 +11,14 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization, hashes
 
+logging.getLogger("pikepdf").setLevel(logging.WARNING) # pikepdf gestiona su propio logger, mejor silenciar su info y usar solo warning
 from pikepdf import open as pike_open
+
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers, fields
 
-from efcli.utils.wrappers import salida_limpia
+from efcli.core.wrappers import salida_limpia
 
 logger = logging.getLogger(__name__)
 

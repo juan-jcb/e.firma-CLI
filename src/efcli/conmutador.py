@@ -1,9 +1,14 @@
 import logging
+
 from efcli import config
-from efcli.utils import sintaxis
+
+# no me termina de agradar esta forma de importar, pero desde un inicio no tendría q está importando aqui modulos posteriores xD
+from efcli.core.sintaxis import validar_sintaxis
+from efcli.ocsp.ocsp_cli import nueva_request, parse_ocsp, imprimir_estado
+from efcli.xdg.usuarios import add_user, del_user, change_user, list_users, print_current_user, print_current_user_conf, print_current_user_toml
+
 from efcli.firma import firma_individual
-from efcli.pki import ocsp
-from efcli.xdg import bootstrap, usuarios # 2 reglones arriba [INFO] pikepdf C++ to Python logger bridge initialized
+from efcli.xdg.bootstrap import check_env, reset_env, init
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +17,7 @@ def entrada(sysargv: list):
     # 0. Caso principal: "efcli solo", función por defecto: firma con la configuración del usuario principal.
     if len(sysargv) <= 1:
         if len(sysargv) == 1:
-            if not bootstrap.check_env():
+            if not check_env():
                 logger.warning("No ha inicializado aún el prorgama (use: 'efcli init').")
                 return None
             firma_individual.hacer_firma()
@@ -20,30 +25,34 @@ def entrada(sysargv: list):
 
         # TODO: desarrollar!, caso efcli con flags explicitas que sustituirían config de usuario temporalmente.
         if len(sysargv) > 2:
-            stx = sintaxis.validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['principal'])
+            stx = validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['principal'])
             if not isinstance(stx, dict): 
                 return None
 
     # 1. Submodulo init
     elif sysargv[1] == 'init':
-        if len(sysargv) == 2:
-            bootstrap.init() # "agregue pdfs a ruta base y empiece a utilizar"
-
-        match sysargv[2]:
-            case '--reset':
-                bootstrap.reset_env()
-            case '--check':
-                if not bootstrap.check_env():
-                    logger.warning("No cuenta con un entorno viable (use: 'efcli init').")
-                    return None
-                bootstrap.check_env(log_level=logging.DEBUG)
-                # En efecto, un entorno correcto se evalua 2 veces, la primera sin debug para sacar
-                # limpio el mensaje de error (si ocurriese), la segunda con debug para mostrar al usuario.
-                # Se hace explicito con 'if not' aquí para no hacerlo circular usando @eval en check_env
-
-            case _:
-                logger.warning("Ingrese una opción válida, vea opciones de modulo init con (efcli -h)")
+        if len(sysargv) <= 2:
+            if check_env():
+                logger.warning("Ya existe un entorno válido! (si quiere revisarlo: 'efcli init --check')")
                 return None
+            init() # "agregue pdfs a ruta base y empiece a utilizar"
+
+        else:
+            match sysargv[2]:
+                case '--reset':
+                    reset_env()
+                case '--check':
+                    if not check_env():
+                        logger.warning("No cuenta con un entorno viable (use: 'efcli init').")
+                        return None
+                    check_env(log_level=logging.DEBUG)
+                    # En efecto, un entorno correcto se evalua 2 veces, la primera sin debug para sacar
+                    # limpio el mensaje de error (si ocurriese), la segunda con debug para mostrar al usuario.
+                    # Se hace explicito con 'if not' aquí para no hacerlo circular usando @eval en check_env
+
+                case _:
+                    logger.warning("Ingrese una opción válida, vea opciones de modulo init con (efcli -h)")
+                    return None
 
     # 2. Submodulo user
     elif sysargv[1] == 'user':
@@ -53,19 +62,19 @@ def entrada(sysargv: list):
 
         match sysargv[2]:
             case '--whoami':
-                usuarios.print_current_user()
+                print_current_user()
             case '--list':
-                usuarios.list_users()
+                list_users()
             case '--change':
-                usuarios.change_user()
+                change_user()
             case '--add':
-                usuarios.add_user()
+                add_user()
             case '--del':
-                usuarios.del_user()
+                del_user()
             case '--conf':
-                usuarios.print_current_user_conf()
+                print_current_user_conf()
             case '--toml':
-                usuarios.print_current_user_toml()
+                print_current_user_toml()
             case _:
                 logger.warning("Ingrese una opción válida, vea opciones de modulo user con (efcli -h)")
                 return None
@@ -77,30 +86,30 @@ def entrada(sysargv: list):
 
         match sysargv[2]:
             case '--request':
-                if not bootstrap.check_env():
+                if not check_env():
                     logger.warning("No ha inicializado el programa! (use efcli init)")
                     return None
 
                 if len(sysargv) == 3: # es request propia.
-                    ocsp.nueva_request(propia=True)
+                    nueva_request(propia=True)
 
                 else: # será request con CERT distinto.
-                    stx = sintaxis.validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['submodulos']['ocsp'])
+                    stx = validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['submodulos']['ocsp'])
                     if not stx: 
                         return None
-                    ocsp.nueva_request(cert_file=stx['--request'])
+                    nueva_request(cert_file=stx['--request'])
 
             case '--validez':
-                stx = sintaxis.validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['submodulos']['ocsp'])
+                stx = validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['submodulos']['ocsp'])
                 if not stx: 
                     return None
-                ocsp.imprimir_estado(resp_file=stx['--validez'])
+                imprimir_estado(resp_file=stx['--validez'])
 
             case '--parse':
-                stx = sintaxis.validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['submodulos']['ocsp'])
+                stx = validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['submodulos']['ocsp'])
                 if not stx: 
                     return None
-                ocsp.parse_ocsp(resp_file=stx['--parse'])
+                parse_ocsp(resp_file=stx['--parse'])
                 
             case _:
                 logger.warning("Ingrese una opción válida, vea opciones de modulo user con (efcli -h)")
@@ -114,6 +123,6 @@ def entrada(sysargv: list):
     else:
         base = config.FLAGS['principal']
         base['miscelanea'] = config.FLAGS['miscelanea'] 
-        stx = sintaxis.validar_sintaxis(args_posicionales=sysargv, modulo=base)
+        stx = validar_sintaxis(args_posicionales=sysargv, modulo=base)
         if not stx:
             return

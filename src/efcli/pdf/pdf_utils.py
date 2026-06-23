@@ -2,7 +2,8 @@ from io import BytesIO
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign.validation.dss import DocumentSecurityStore
-from efcli.pki.x509_utils import leer_subject_simple
+
+from efcli import core
 
 def leer_firmas_pdf(pdf_input: str | BytesIO) -> list[str]:
     '''
@@ -86,7 +87,7 @@ def leer_firmas_pdf(pdf_input: str | BytesIO) -> list[str]:
     for i in range(0, len(firmas_etiquetadas)):
         tipo = firmas_etiquetadas[i][0]
         firma = firmas_etiquetadas[i][1]
-        firmas.append(f"{leer_subject_simple(cert=firma.signer_cert)} ({tipo})")
+        firmas.append(f"{core.x509.leer_subject_simple(cert=firma.signer_cert)} ({tipo})")
 
     return firmas
 

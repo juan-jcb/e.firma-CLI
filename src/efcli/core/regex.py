@@ -7,11 +7,29 @@ ALFANUMERICO = re.compile(r'^[A-Za-z0-9]*$')
 # Alfanumérico, puntos, guiones medio/bajo, espacios entremedias, sin espacios al inicio/final.
 ASCII_SIMPLE = re.compile(r'^[A-Za-z0-9_.-]+(?: [A-Za-z0-9_.-]+)*$')
 # Alfabeto español, espacios entremedias, sin espacios al inicio/final, input vacio permitido.
-SPANISH = re.compile(r'^[A-Za-zÁÉÍÓÚáéíóúÑñÜü0-9_.-]*(?: [A-Za-zÁÉÍÓÚáéíóúÑñÜü0-9_.-]+)*$')
+SPANISH = re.compile(r'^[A-Za-zÁÉÍÓÚáéíóúÑñÜü0-9_.-]*(?: [A-Za-zÁÉÍÓÚáéíóúÑñÜü0-9_.,-]+)*$')
 # Correos (simple), input vacio permitido.
 CORREOS = re.compile(r'^(?:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})?$')
 
 def input_regex(patron: re.Pattern, mensaje: str, pista: str):
+    '''
+    Función generalizada para gestionar un input() de usuario
+    mediante bucle infinito y patrones regex.
+
+    Si el usuario ingresa input válido se retorna lo que sea que
+    haya ingresado, si no es válido se repite indefinidamente.
+
+    :param patron:
+        Patron :class:`re.Pattern` con la expresión a utilizar.
+    :param mensaje:
+        Texto :class:`str` que mostrará el input() al usuario
+        para leer su entrada.
+    :param pista:
+        Texto :class:`str` que se mostrará tras input() fallido,
+        úselo para explicar textualmente el comportamiento de
+        la expresión regular.
+
+    '''
     while True:
         _ = input(mensaje).strip()
         if not patron.match(_):

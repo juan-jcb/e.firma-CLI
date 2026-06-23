@@ -4,7 +4,7 @@ from asn1crypto import x509 as asn1_x509
 asn1_x509.NameTypeAndValue._oid_specs['unique_identifier'] = asn1_x509.DirectoryString
 
 import sys
-from efcli.utils import conmutador
+from efcli import conmutador
 
 def main():
     conmutador.entrada(sys.argv)
