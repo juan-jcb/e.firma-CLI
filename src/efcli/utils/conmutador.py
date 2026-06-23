@@ -11,7 +11,7 @@ def entrada(sysargv: list):
 
     # 0. Caso principal: "efcli solo", función por defecto: firma con la configuración del usuario principal.
     if len(sysargv) <= 1:
-        if len(sysargv) == 2:
+        if len(sysargv) == 1:
             if not bootstrap.check_env():
                 logger.warning("No ha inicializado aún el prorgama (use: 'efcli init').")
                 return None
