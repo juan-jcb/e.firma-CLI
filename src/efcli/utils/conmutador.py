@@ -112,6 +112,8 @@ def entrada(sysargv: list):
         pass
 
     else:
-        stx = sintaxis.validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['principal'])
+        base = config.FLAGS['principal']
+        base['miscelanea'] = config.FLAGS['miscelanea'] 
+        stx = sintaxis.validar_sintaxis(args_posicionales=sysargv, modulo=base)
         if not stx:
             return

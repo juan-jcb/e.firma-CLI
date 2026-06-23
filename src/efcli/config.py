@@ -148,15 +148,16 @@ Submodulo USER:
 
 Submodulo OCSP:
 
-  ocsp --request CERT       Nueva consulta OCSP para 'CERT' con el responder por defecto.
+  ocsp --request            (sin argumento) Nueva consulta OCSP para el certificado del usuario principal usando el responder por defecto.
+  ocsp --request CERT       (con argumento) Nueva consulta OCSP para 'CERT' usando el responder por defecto.
   ocsp --validez RESP       Imprimir el estado de un x509 (good, revoked) desde una respuesta OCSP (DER o PEM).
   ocsp --parse RESP         Imprimir en texto legible una respuesta OCSP completa (DER o PEM).
 
-Submodulo TSA:
+Submodulo TSA (no disponible aún):
 
   tsa --token PDF           Añadir un Timestamp Token (TST) incremental a un PDF usando la TSA por defecto.
 
-Submodulo PDF:
+Submodulo PDF (no disponible aún):
 
   pdf --firmas PDF          Imprimir el historial de firmas de un PDF.
 
