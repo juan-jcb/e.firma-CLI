@@ -19,24 +19,23 @@ def coinstruir_OCSPRequest(cert_client: asn1_x509.Certificate, cert_issuer: asn1
 
     return req
 
-def extraer_x509_responder(raw_response: bytes) -> asn1_x509.Certificate | None:
-    rsp = crypto_ocsp.load_der_ocsp_response(raw_response)
-    responder_certs = rsp.certificates
-    if not responder_certs:
-        return False
+def parse_response(der_bytes: bytes) -> tuple[bool, str]:
+    '''
+    Parsea una respuesta OCSP en formato estándar de OpenSSL desde
+    sus bytes en DER.
 
-    # Se debe normalizar también el x509 del responder (;_;)
-    else:
-        # asumiendo que solo el indice 0 es el que se necesita
-        responder_x509_bytes = responder_certs[0].public_bytes(Encoding.DER)
-        crt = asn1_x509.Certificate.load(responder_x509_bytes)
-        return crt
+    :param der_bytes:
+        bytes en DER de la respuesta OCSP (se asumen bytes de una
+        respuesta estructuralmente parseable).
 
-def leer_ocsp_response(der_bytes: bytes) -> str:
-    resp = crypto_ocsp.load_der_ocsp_response(der_bytes)
-    lines = []
+    :return: :class:`tuple` con 2 elementos.\n
+        Indice 0: :class:`bool` de flag indicativo de si la respuesta
+        parseada es válida, True para "successful (0x0)", False para
+        cualquiera 0x1 - 0x6.
 
-    lines.append("OCSP Response Data:")
+        Indice 1: :class:`str` de la respuesta parseada para imprimir
+        o almacenar en variable.
+    '''
 
     status_map = {
         crypto_ocsp.OCSPResponseStatus.SUCCESSFUL: "successful (0x0)",
@@ -46,14 +45,18 @@ def leer_ocsp_response(der_bytes: bytes) -> str:
         crypto_ocsp.OCSPResponseStatus.SIG_REQUIRED: "sigRequired (0x5)",
         crypto_ocsp.OCSPResponseStatus.UNAUTHORIZED: "unauthorized (0x6)",
     }
+    resp = crypto_ocsp.load_der_ocsp_response(der_bytes)
+
+    lines = []
+    lines.append("OCSP Response Data:")
     lines.append(f"    OCSP Response Status: {status_map.get(resp.response_status, str(resp.response_status))}")
 
+    # Se retorna tal cual cualquier respuesta que no sea útil junto a su flag False para evaluar fuera.
     if resp.response_status != crypto_ocsp.OCSPResponseStatus.SUCCESSFUL:
-        return "\n".join(lines)
+        return (False, "\n".join(lines))
 
     lines.append(f"    Response Type: Basic OCSP Response")
     lines.append(f"    Version: 1 (0x0)")
-
     responder_key = resp.responder_key_hash
     responder_name = resp.responder_name
     if responder_key:
@@ -106,4 +109,17 @@ def leer_ocsp_response(der_bytes: bytes) -> str:
     for chunk in chunks:
         lines.append(f"        {chunk}:")
 
-    return "\n".join(lines)
+    return (True, "\n".join(lines))
+
+def extraer_x509_responder(raw_response: bytes) -> asn1_x509.Certificate | None:
+    rsp = crypto_ocsp.load_der_ocsp_response(raw_response)
+    responder_certs = rsp.certificates
+    if not responder_certs:
+        return None
+
+    # Se debe normalizar también el x509 del responder (;_;)
+    else:
+        # asumiendo que solo el indice 0 es el que se necesita
+        responder_x509_bytes = responder_certs[0].public_bytes(Encoding.DER)
+        crt = asn1_x509.Certificate.load(responder_x509_bytes)
+        return crt

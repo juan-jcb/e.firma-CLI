@@ -4,7 +4,7 @@ from efcli import config
 
 # no me termina de agradar esta forma de importar, pero desde un inicio no tendría q está importando aqui modulos posteriores xD
 from efcli.core.sintaxis import validar_sintaxis
-from efcli.ocsp.ocsp_cli import nueva_request, parse_ocsp, imprimir_estado
+from efcli.ocsp.ocsp_cli import nueva_request, imprimir_respuesta, imprimir_estado
 from efcli.xdg.usuarios import add_user, del_user, change_user, list_users, print_current_user, print_current_user_conf, print_current_user_toml
 
 from efcli.firma import firma_individual
@@ -103,13 +103,13 @@ def entrada(sysargv: list):
                 stx = validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['submodulos']['ocsp'])
                 if not stx: 
                     return None
-                imprimir_estado(resp_file=stx['--validez'])
+                imprimir_estado(response=stx['--validez'])
 
             case '--parse':
                 stx = validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['submodulos']['ocsp'])
                 if not stx: 
                     return None
-                parse_ocsp(resp_file=stx['--parse'])
+                imprimir_respuesta(resp_file=stx['--parse'])
                 
             case _:
                 logger.warning("Ingrese una opción válida, vea opciones de modulo user con (efcli -h)")

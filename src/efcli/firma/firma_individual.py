@@ -129,7 +129,7 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
     print("\n    4. Cargando contexto opcional de la firma...")
     # OCSP para estado del firmante (perfil 'L')
     if PREFERENCIAS['OCSP'] == True:
-        print(f"     • Se utilizará OCSP '{config.GLOBAL_CONFIG['OCSP']['endpoints'][0]}' para validación externa (Fallbacks: {len(config.GLOBAL_CONFIG['OCSP']['endpoints'])-1}).")
+        print(f"     • Se utilizará OCSP '{xdg_config.GLOBAL_CONFIG['OCSP']['endpoints'][0]}' para validación externa (Fallbacks: {len(xdg_config.GLOBAL_CONFIG['OCSP']['endpoints'])-1}).")
         PERFIL_FIRMA_PROPUESTO[0] = 'L'
     else:
         print('     • NO se utilizará OCSP para validar su certificado X.509.')
@@ -298,11 +298,38 @@ def firma(pdfs: list, firmante_ctx: dict):
                 ocsp_response = fetch.fetch_ocsp(ocsp_request=ocsp_request, endpoint=endpoint)
                 if ocsp_response:
                     logger.info("Respuesta obtenida.")
-                    estado = ocsp_response['response_bytes']['response'].parsed['tbs_response_data']['responses'][0]['cert_status']
-                    break
+                    ocsp_raw_response = ocsp_response.dump()
+                    
+                    # Si sí hay respuesta (cargada como objeto respuesta) pero no es una operativamente válida (cualquiera entre 0x1-0x6)
+                    # se gestiona tal que...
+                    parsed_response = ocsp_utils.parse_response(der_bytes=ocsp_raw_response)
+                    if parsed_response[0] == False:
+                        logger.warning("Excepción del código de respuesta!")
+                        logger.warning("El endpoint respondíó, pero NO con material útil para usar como respuesta OCSP en una firma.")
+                        print(f"\n{parsed_response[1]}\n")
+                        logger.error("No es posible continuar en este estado y preservar el perfil de firma 'L'.")
+                        logger.error("Tiene 2 opciones:")
+                        logger.error("  1. Continuar firma pero SIN validación OCSP externa; el perfil de firma se mantendrá en 'Basic (B)'.")
+                        logger.error("  2. Cancelar el proceso, esperar a que se regularice el estado del responder y volver a intentar.")
+                        while True:
+                            opcion = input('\n¿Continuar con el proceso de firma? (y/n): ')
+                            if 'y' in opcion:
+                                print("Continuando...")
+                                break
+                            elif 'n' in opcion:
+                                DIR_SESION_FIRMA.rmdir()
+                                print("Saliendo...")
+                                return False
+                            else:
+                                print('Ingrese una opción correcta.')
+                    
+                    else:
+                        estado = ocsp_response['response_bytes']['response'].parsed['tbs_response_data']['responses'][0]['cert_status']
+                        break
                 else:
                     print()
 
+            # Si se recorren todos los endpoints y se sale naturalemnte del bucle sin haber respuesta.
             if not ocsp_response:
                 logger.error("Han fallado todos los servidores OCSP. Esto AFECTA DIRECTAMENTE al perfil de validación 'Long-Term (L)'.")
                 logger.error("Tiene 2 opciones:")
@@ -336,7 +363,6 @@ def firma(pdfs: list, firmante_ctx: dict):
 
                 # Recuperación del certificado x509 del responder desde su respuesta.
                 logger.info("(Si existiese) Recuperando x509 del responder...")
-                ocsp_raw_response = ocsp_response.dump()
                 responder_x509 = ocsp_utils.extraer_x509_responder(raw_response=ocsp_raw_response)
 
                 if isinstance(responder_x509, asn1_x509.Certificate):
@@ -463,16 +489,8 @@ def firma(pdfs: list, firmante_ctx: dict):
                         print('Ingrese una opción correcta.')
             
             else:
-                logger.error("No es posible firmar en este estado, el endpoint respondíó, pero no con material útil para usar como respuesta OCSP.")
-                return False
-                #TODO: gestionar los casos donde el endpoint OCSP si responde pero no con algo útil para el flujo de firma, por ejemplo:
-                # 
-                # En binario:
-                #   00000000: 3003 0a01 03                             0....
-                # 
-                # En plano:
-                #   OCSP Response Data:
-                #       OCSP Response Status: tryLater (0x3)
+                pass
+                # TODO: hacer para casos UNKNWOUN pass
 
         # Firma en bucle sobre los PDFs. Todos los iteradores son tuplas: (objeto "Path del PDF", int "siguiente indice disponible").
         for i in PDFs:
@@ -611,7 +629,7 @@ def firma(pdfs: list, firmante_ctx: dict):
 
     if OCSP_INFO:
         archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'der', status_ocsp=ocsp_raw_response)
-        archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'txt', status_ocsp_textual=ocsp_utils.leer_ocsp_response(der_bytes=ocsp_raw_response).encode('utf-8'))
+        archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'txt', status_ocsp_textual=parsed_response[1].encode('utf-8'))
         archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'pem', responder_x509=pem.armor(der_bytes=responder_x509.dump(), type_name="CERTIFICATE"))
         if OCSP_CA_CHAIN:
             archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=OCSP_CA_CHAIN).encode('utf-8'))
@@ -637,7 +655,7 @@ def hacer_firma():
 
     # 1. Evaluar que el material a firmar sea viable antes de cualquier otra cosa, evidentemente (¬_¬").
     pdf_ruta_base = Path(xdg_config.GLOBAL_CONFIG['pdf_ruta_base'])
-    lista_pdfs = list(pdf_ruta_base.glob(pattern="*.pdf"))
+    lista_pdfs = list(pdf_ruta_base.glob(pattern="*.pdf")) # TODO: normalizar cualquier .pdf que no sea solo en minus.
     if not lista_pdfs:
         logger.warning("No hay material para firmar en: '%s' (,,¬﹏¬,,)!", Path(xdg_config.GLOBAL_CONFIG['pdf_ruta_base']).absolute())
         logger.warning("Añada uno o más documentos .pdf y empiece a firmar!")

@@ -2,7 +2,7 @@ import logging, tomllib, json, time
 from pathlib import Path
 
 from .xdg_config import STATE_USERS_FILE, CONFIG_DIR
-from efcli import core
+from efcli.core import registros, wrappers, regex, x509, pkey
 
 from . import mensajes
 from .bootstrap import check_env
@@ -35,7 +35,7 @@ def new_user(mensajes: dict, es_init: bool = False):
 
         # 2. Evaluar que no existan nombres repetidos
         while True:
-            NOMBRE_USUARIO = core.regex.input_regex(patron=core.regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo, puntos y espacios intermedios.")
+            NOMBRE_USUARIO = regex.input_regex(patron=regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo, puntos y espacios intermedios.")
             # TODO: en una base de datos real esto sería malardo, pero de momento no contemplo más de 10 entradas en JSON para usuarios.
             if not NOMBRE_USUARIO in (i for i in users['usuarios']):
                 break
@@ -43,7 +43,7 @@ def new_user(mensajes: dict, es_init: bool = False):
 
     else:
         # TODO: debería manejar los nombres de usuario solo mayus o solo minus¿?¿?¿? o permitir usuario distinto de mismo nombre con variación por mayus/minus
-        NOMBRE_USUARIO = core.regex.input_regex(patron=core.regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo y puntos.")
+        NOMBRE_USUARIO = regex.input_regex(patron=regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo y puntos.")
     time.sleep(1)
     print("\033[H\033[2J", end="")
 
@@ -58,12 +58,12 @@ def new_user(mensajes: dict, es_init: bool = False):
         cert_input = Path(input("Ruta absoluta del certificado del firmante (.cer): "))
         if cert_input.is_file():
             try:
-                crt, encode = core.x509.cargar_cert_asn1(cert=cert_input)
+                crt, encode = x509.cargar_cert_asn1(cert=cert_input)
             except Exception:
                 logger.warning("El archivo ingresado no es un certificado. Ingreselo nuevamente.")
                 continue
             else:
-                print(f"Correcto. {core.x509.leer_subject_simple(crt)} ({encode})")
+                print(f"Correcto. {x509.leer_subject_simple(crt)} ({encode})")
                 CERT_USUARIO = USER_DIR / f"{NOMBRE_USUARIO}.crt"
                 break
         else:
@@ -74,7 +74,7 @@ def new_user(mensajes: dict, es_init: bool = False):
         pkey_input = Path(input("Ruta absoluta de la clave privada del firmante (.key): "))
         if pkey_input.is_file():
             try:
-                cifrada, encode = core.cripto.es_pkey_cifrada(pkey=pkey_input)
+                cifrada, encode = pkey.es_pkey_cifrada(pkey=pkey_input)
             except Exception:
                 logger.warning("El archivo ingresado no es una clave privada. Ingresela nuevamente.")
                 continue
@@ -93,11 +93,11 @@ def new_user(mensajes: dict, es_init: bool = False):
 
     # 4. metadatos de firma
     print(mensajes['metadatos_firma'])
-    ID_FIRMA        = core.regex.input_regex(patron=core.regex.ALFANUMERICO, mensaje="Identificador de la firma: ", pista="Alfanumerico mayus/minus.")
-    NOMBRE_FIRMANTE = core.regex.input_regex(patron=core.regex.SPANISH, mensaje="Nombre del firmante: ", pista="Solo caracteres del alfabeto en español.")
-    RAZON           = core.regex.input_regex(patron=core.regex.SPANISH, mensaje="Razón de firma: ", pista="Solo caracteres del alfabeto en español.")
-    LUGAR           = core.regex.input_regex(patron=core.regex.SPANISH, mensaje="Lugar de firma: ", pista="Solo caracteres del alfabeto en español.")
-    CONTACTO        = core.regex.input_regex(patron=core.regex.CORREOS, mensaje="Correo del firmante: ", pista="Solo correos electrónicos.")
+    ID_FIRMA        = regex.input_regex(patron=regex.ALFANUMERICO, mensaje="Identificador de la firma: ", pista="Alfanumerico mayus/minus.")
+    NOMBRE_FIRMANTE = regex.input_regex(patron=regex.SPANISH, mensaje="Nombre del firmante: ", pista="Solo caracteres del alfabeto en español.")
+    RAZON           = regex.input_regex(patron=regex.SPANISH, mensaje="Razón de firma: ", pista="Solo caracteres del alfabeto en español.")
+    LUGAR           = regex.input_regex(patron=regex.SPANISH, mensaje="Lugar de firma: ", pista="Solo caracteres del alfabeto en español.")
+    CONTACTO        = regex.input_regex(patron=regex.CORREOS, mensaje="Correo del firmante: ", pista="Solo correos electrónicos.")
     time.sleep(2)
 
     # #!. skeleton de usuario
@@ -166,7 +166,7 @@ TST_DSS = false
         "skel": SKEL_USER
     }
 
-@core.wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def list_users():
     logger.info("=== USUARIOS ===")
     with open(STATE_USERS_FILE, "r") as f:
@@ -181,20 +181,20 @@ def list_users():
                 return False
             logger.info("   %s: '%s'", v, k)
 
-@core.wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def print_current_user():
     users = load_state_users()
     principal_name = users.get('principal')
     principal_dict = users['usuarios'].get(users['principal'])
     cert_path = principal_dict['cert']
     with open(cert_path, "rb") as f:
-        cert, _ = core.x509.cargar_cert_asn1(cert=f.read())
+        cert, _ = x509.cargar_cert_asn1(cert=f.read())
 
-    with core.registros.modded_logs(target_logger=logger, level=logging.DEBUG):
+    with registros.modded_logs(target_logger=logger, level=logging.DEBUG):
         logger.debug("Usuario: %s", principal_name)
-        logger.debug("e.firma: %s", core.x509.leer_subject_simple(cert))
+        logger.debug("e.firma: %s", x509.leer_subject_simple(cert))
 
-@core.wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def print_current_user_conf():
     users = load_state_users()
     principal_name = users.get('principal')
@@ -204,12 +204,12 @@ def print_current_user_conf():
     with open(users['usuarios'].get(users['principal'])['config_file'], "rb") as f:
         cnf = tomllib.load(f)
     with open(cert_path, "rb") as f:
-        cert, _ = core.x509.cargar_cert_asn1(cert=f.read())
+        cert, _ = x509.cargar_cert_asn1(cert=f.read())
 
-    with core.registros.modded_logs(target_logger=logger, level=logging.DEBUG):
+    with registros.modded_logs(target_logger=logger, level=logging.DEBUG):
         logger.debug("CONFIGURACIÓN DE USUARIO: '%s'", principal_name)
         logger.debug("=== E.FIRMA ===", )
-        logger.debug("Propietario: %s", core.x509.leer_subject_simple(cert))
+        logger.debug("Propietario: %s", x509.leer_subject_simple(cert))
         logger.debug("Certificado: '%s'", cnf['firmante']['certificado'])
         logger.debug("Clave privada: '%s'", cnf['firmante']['clave_privada'])
         logger.debug("=== METADATOS DE FIRMA ===", )
@@ -230,14 +230,14 @@ def print_current_user_conf():
         logger.debug("Sello de tiempo en firma (T): %s", cnf['preferencias']['TST_CMS'])
         logger.debug("Sello de tiempo en PDF (A): %s", cnf['preferencias']['TST_DSS'])
 
-@core.wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def print_current_user_toml():
     users = load_state_users()
     with open(users['usuarios'].get(users['principal'])['config_file'], "r") as f:
         print(f.read())
 
-@core.wrappers.salida_limpia()
-@core.wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.salida_limpia()
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def add_user():
     # Para añadir un usuario se asume entorno viable (validado en conmutador)
     nuevo = new_user(mensajes=mensajes.mensajes_adduser, es_init=False)
@@ -268,8 +268,8 @@ def add_user():
 
         logger.info("Usuario '%s' creado correctamente!", NOMBRE_USUARIO)
 
-@core.wrappers.salida_limpia()
-@core.wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.salida_limpia()
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def del_user():
     users = load_state_users()
 
@@ -284,7 +284,7 @@ def del_user():
 
     print()
     while True:
-        opcion = int(core.regex.input_regex(patron=core.regex.NUMERICO, mensaje="Ingrese el n° de usuario que desea borrar: ", pista="Solo números naturales positivos."))
+        opcion = int(regex.input_regex(patron=regex.NUMERICO, mensaje="Ingrese el n° de usuario que desea borrar: ", pista="Solo números naturales positivos."))
         if opcion == 0 or opcion > idx: # idx es lo mismo que len() sobre los usuarios
             logger.warning("No existe un usuario con ese número. Vuelva a ingresarlo.")
         else:
@@ -328,8 +328,8 @@ def del_user():
         logger.info("Usuario '%s' borrado correctamente!", seleccionado)
         return True
 
-@core.wrappers.salida_limpia()
-@core.wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.salida_limpia()
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def change_user():
     users = load_state_users()
 
@@ -344,7 +344,7 @@ def change_user():
 
     print()
     while True:
-        opcion = int(core.regex.input_regex(patron=core.regex.NUMERICO, mensaje="Ingrese el n° de usuario al que desea cambiar: ", pista="Solo números naturales positivos."))
+        opcion = int(regex.input_regex(patron=regex.NUMERICO, mensaje="Ingrese el n° de usuario al que desea cambiar: ", pista="Solo números naturales positivos."))
         if opcion == 0 or opcion > idx: # idx es lo mismo que len() sobre los usuarios
             logger.warning("No existe un usuario con ese número. Vuelva a ingresarlo.")
         else:

@@ -107,7 +107,7 @@ Uso de submodulos:
     efcli tsa  [opciones] ...
     efcli pdf  [opciones] ...
 
-Firma:
+Firma (opciones explicitas) (no disponible aún):
 
   -f,  --firmar FILE|DIR    Ruta de archivo .pdf o directorio que almacene archivos .pdf (opcional).
   -p,  --perfil OPT         Perfil de firma en *mayus/minus*: 'B', 'L', 'T', 'A' (opcional).
@@ -131,8 +131,8 @@ Submodulo USER:
 
 Submodulo OCSP:
 
-  ocsp --request            (sin argumento) Nueva consulta OCSP para el certificado del usuario principal usando el responder por defecto.
   ocsp --request CERT       (con argumento) Nueva consulta OCSP para 'CERT' usando el responder por defecto.
+  ocsp --request            (sin argumento) Nueva consulta OCSP para el certificado del usuario principal usando el responder por defecto.
   ocsp --validez RESP       Imprimir el estado de un x509 (good, revoked) desde una respuesta OCSP (DER o PEM).
   ocsp --parse RESP         Imprimir en texto legible una respuesta OCSP completa (DER o PEM).
 

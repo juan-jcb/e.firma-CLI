@@ -114,6 +114,8 @@ def reset_env():
 @wrappers.salida_limpia()
 def init():
     import time
+    from colorama import Fore
+    from efcli.config import PKI_ASSETS
     print("CONFIGURACIÓN INICIAL.\n")
     
     # 1. Directorio de firmas
@@ -185,7 +187,7 @@ DSS_HASH = "sha384"
                 'data_pki_dir': xdg_config.DATA_PKI_DIR.as_posix(),
             },
 
-            'assets': [f"{xdg_config.DATA_PKI_DIR}/{i.name}" for i in xdg_config.PKI_ASSETS]
+            'assets': [f"{xdg_config.DATA_PKI_DIR}/{i.name}" for i in PKI_ASSETS]
         }
 
     init_state_usuarios = {
@@ -201,6 +203,8 @@ DSS_HASH = "sha384"
         }
 
     # Poblado de archivos del entorno externo.
+    print()
+    logger.info("Creando usuario...")
     for i in (*(MAIN_ENV_DIRS), xdg_config.DATA_PKI_DIR, USER_DIR, PDF_RUTA_BASE):
         i.mkdir(parents=True, exist_ok=True)
     with open(xdg_config.GLOBAL_CONFIG_FILE, "w") as f: 
@@ -209,7 +213,7 @@ DSS_HASH = "sha384"
         f.write(SKEL_USER)
     shutil.copy2(src=cert_input, dst=CERT_USUARIO)
     shutil.copy2(src=pkey_input, dst=PKEY_USUARIO)
-    for i in xdg_config.PKI_ASSETS:
+    for i in PKI_ASSETS:
         shutil.copy2(src=i, dst=f"{xdg_config.DATA_PKI_DIR}/{i.name}")
     state_programa = json.dumps(obj=init_state_programa, indent=2, ensure_ascii=False)
     state_usuarios = json.dumps(obj=init_state_usuarios, indent=2, ensure_ascii=False)
@@ -217,3 +221,4 @@ DSS_HASH = "sha384"
         f.write(state_programa)
     with open(xdg_config.STATE_USERS_FILE, "w") as f:
         f.write(state_usuarios)
+    print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Usuario creado correctamente!")
