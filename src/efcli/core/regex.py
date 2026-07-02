@@ -1,5 +1,9 @@
 import re
 
+# Si/No.
+SI_NO = re.compile(r'^[yn]$')
+# Si/No/Input vacio.
+SI_NO_BLANK = re.compile(r'^[yn]*$')
 # Solo numerico.
 NUMERICO = re.compile(r'^[0-9]+$')
 # Alfanumérico, input vacio permitido

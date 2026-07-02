@@ -123,6 +123,7 @@ Submodulo USER:
   user --add                Añadir un nuevo usuario local (prompt interactivo).
   user --del                Borrar un usuario local (prompt interactivo).
   user --change             Cambiar de usuario principal (prompt interactivo).
+  user --reconf             Re-elige parametros variables del usuario principal (metadatos, perfiles) (prompt interactivo).
 
   user --whoami             Imprime el nombre del usuario principal y su certificado X.509 asoociado.
   user --list               Imprime listado con todos los usuarios del programa.

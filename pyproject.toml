@@ -21,6 +21,7 @@ requires-python = ">=3.11"
 dependencies = [
 	"pyhanko==0.34.1",
     "pikepdf==10.5.1",
+    "tomli-w",
     "aiohttp",
     "colorama==0.4.6"
 ]

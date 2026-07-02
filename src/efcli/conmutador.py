@@ -5,7 +5,7 @@ from efcli import config
 # no me termina de agradar esta forma de importar, pero desde un inicio no tendría q está importando aqui modulos posteriores xD
 from efcli.core.sintaxis import validar_sintaxis
 from efcli.ocsp.ocsp_cli import nueva_request, imprimir_respuesta, imprimir_estado
-from efcli.xdg.usuarios import add_user, del_user, change_user, list_users, print_current_user, print_current_user_conf, print_current_user_toml
+from efcli.xdg.usuarios import add_user, del_user, change_user, reconf_user, list_users, print_current_user, print_current_user_conf, print_current_user_toml
 
 from efcli.firma import firma_individual
 from efcli.xdg.bootstrap import check_env, reset_env, init
@@ -33,7 +33,7 @@ def entrada(sysargv: list):
     elif sysargv[1] == 'init':
         if len(sysargv) <= 2:
             if check_env():
-                logger.warning("Ya existe un entorno válido! (si quiere revisarlo: 'efcli init --check')")
+                logger.info("Ya existe un entorno válido! (si quiere revisarlo: 'efcli init --check')")
                 return None
             init() # "agregue pdfs a ruta base y empiece a utilizar"
 
@@ -67,6 +67,8 @@ def entrada(sysargv: list):
                 list_users()
             case '--change':
                 change_user()
+            case '--reconf':
+                reconf_user()
             case '--add':
                 add_user()
             case '--del':

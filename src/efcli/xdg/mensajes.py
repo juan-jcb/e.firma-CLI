@@ -263,4 +263,5 @@ mensajes_adduser = {
     'usuario_local': """Añadiendo usuario local.""",
     'archivos_efirma': """Firma electrónica.""",
     'metadatos_firma': """Metadatos de su firma.""",
+    'pefiles_firma': """Preferencias sobre el perfil de sus firmas.""",
 }

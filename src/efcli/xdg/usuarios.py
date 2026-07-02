@@ -1,4 +1,4 @@
-import logging, tomllib, json, time
+import logging, tomllib, json, time, sys
 from pathlib import Path
 
 from .xdg_config import STATE_USERS_FILE, CONFIG_DIR
@@ -45,7 +45,7 @@ def new_user(mensajes: dict, es_init: bool = False):
         # TODO: debería manejar los nombres de usuario solo mayus o solo minus¿?¿?¿? o permitir usuario distinto de mismo nombre con variación por mayus/minus
         NOMBRE_USUARIO = regex.input_regex(patron=regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo y puntos.")
     time.sleep(1)
-    print("\033[H\033[2J", end="")
+    sys.stdout.write("\033[H\033[2J")
 
     USER_DIR = CONFIG_DIR / NOMBRE_USUARIO
     USER_CONFIG_FILE = USER_DIR / f"{NOMBRE_USUARIO}.toml"
@@ -89,7 +89,7 @@ def new_user(mensajes: dict, es_init: bool = False):
         else:
             logger.warning("La ruta es incorrecta, ingresela de nuevo!")
     time.sleep(1)
-    print("\033[H\033[2J", end="")
+    sys.stdout.write("\033[H\033[2J")
 
     # 4. metadatos de firma
     print(mensajes['metadatos_firma'])
@@ -98,7 +98,15 @@ def new_user(mensajes: dict, es_init: bool = False):
     RAZON           = regex.input_regex(patron=regex.SPANISH, mensaje="Razón de firma: ", pista="Solo caracteres del alfabeto en español.")
     LUGAR           = regex.input_regex(patron=regex.SPANISH, mensaje="Lugar de firma: ", pista="Solo caracteres del alfabeto en español.")
     CONTACTO        = regex.input_regex(patron=regex.CORREOS, mensaje="Correo del firmante: ", pista="Solo correos electrónicos.")
-    time.sleep(2)
+    time.sleep(1)
+    sys.stdout.write("\033[H\033[2J")
+
+    # 5. preferencias sobre el perfil de firma
+    print(mensajes['pefiles_firma'])
+    USAR_OCSP    = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar validación OCSP? (y/n): ", pista='Solo letras "y", "n".')
+    USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo TST en su contenedor firma? (y/n): ", pista='Solo letras "y", "n".')
+    USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo TST en PDF (/DocTimeStamp)? (y/n): ", pista='Solo letras "y", "n".')
+    opciones = [f"{i == 'y'}".lower() for i in [USAR_OCSP, USAR_TSA_CMS, USAR_TSA_DSS]] # me parace cutre, pero eh, deja en minisculas un mapeo de booleanos para usar toml
 
     # #!. skeleton de usuario
     SKEL_USER = f'''# Configuración de usuario {NOMBRE_USUARIO}
@@ -130,13 +138,13 @@ coords_y = 85
     
 [preferencias]
 # validación externa sobre el x509 del firmante con OCSP (Eleva de Perfil B a Pefil L)
-OCSP = false
+OCSP = {opciones[0]}
 
 # TST en el CMS del firmante (Añade Perfil T)
-TST_CMS = false
+TST_CMS = {opciones[1]}
 
 # TST en /DocTimeStamp del PDF (Añade Perfil A)
-TST_DSS = false
+TST_DSS = {opciones[2]}
 
 # Según el flujo de operaciones PAdES, la configuración de una TSA para timestamping en DSS NO debería
 # estár en éste dirccionario, sin embargo un firmante individual, dado que es el único participante
@@ -362,6 +370,76 @@ def change_user():
     print()
     logger.info("Bienvenido '%s'!", seleccionado)
     return True
+
+def reconf_user():
+    '''
+    Función de prompt interactivo para reelegir parametros variables en la configuración
+    del usuario principal: Metadatos de firma, Perfil de firma, firma visible.
+
+    Se retoma la misma estructura de formulario de creación de usuario agregando con la
+    caracteristica especifica de que si se introducen cadenas vacias se REUTILIZARÁN los
+    valores preexistentes en la config del principal.
+    '''
+    import tomli_w
+    
+    users = load_state_users()
+    principal_config_path = users['usuarios'][users.get('principal')]['config_file']
+    principal = load_current_user_conf()
+    actualizado = principal.copy()
+    opciones = []
+
+    logger.info("Reconfiguración de parametros (blanco para mantener valores previos).")
+    
+    # 4. metadatos de firma
+    print()
+    logger.info("=== METADATOS DE FIRMA ===")
+    ID_FIRMA        = regex.input_regex(patron=regex.ALFANUMERICO, mensaje=f"Identificador de la firma [{principal["metadatos_firma"]["nombre_firma"]}]: ", pista="Alfanumerico mayus/minus.")
+    NOMBRE_FIRMANTE = regex.input_regex(patron=regex.SPANISH, mensaje=f"Nombre del firmante [{principal["metadatos_firma"]["nombre_firmante"]}]: ", pista="Solo caracteres del alfabeto en español.")
+    RAZON           = regex.input_regex(patron=regex.SPANISH, mensaje=f"Razón de firma [{principal["metadatos_firma"]["razon"]}]: ", pista="Solo caracteres del alfabeto en español.")
+    LUGAR           = regex.input_regex(patron=regex.SPANISH, mensaje=f"Lugar de firma [{principal["metadatos_firma"]["lugar"]}]: ", pista="Solo caracteres del alfabeto en español.")
+    CONTACTO        = regex.input_regex(patron=regex.CORREOS, mensaje=f"Correo del firmante [{principal["metadatos_firma"]["contacto"]}]: ", pista="Solo correos electrónicos.")
+    
+    # 5. preferencias sobre el perfil de firma
+    print()
+    logger.info("=== PERFILES DE FIRMA ===")
+    USAR_OCSP    = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Validación OCSP [{principal["preferencias"]["OCSP"]}] (y/n): ", pista='Solo letras "y", "n".')
+    USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo TST en su contenedor firma [{principal["preferencias"]["TST_CMS"]}] (y/n): ", pista='Solo letras "y", "n".')
+    USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo TST en PDF (/DocTimeStamp) [{principal["preferencias"]["TST_DSS"]}] (y/n): ", pista='Solo letras "y", "n".')
+
+    # relación semántica hardcodeada, funciona pero me parece cuestionable.
+    for i in [("nombre_firma", ID_FIRMA), ("nombre_firmante", NOMBRE_FIRMANTE), ("razon", RAZON), ("lugar", LUGAR), ("contacto", CONTACTO)]:
+        # primero evaluar si existen valores reutilizados
+        if not i[1]:
+            opciones.append(principal["metadatos_firma"].get(i[0]))
+        else:
+            opciones.append(i[1])
+    actualizado["metadatos_firma"] = {k: opciones[idx] for idx, k in enumerate(principal["metadatos_firma"], 0)}
+    opciones.clear()
+
+    for i in [("OCSP", USAR_OCSP), ("TST_CMS", USAR_TSA_CMS), ("TST_DSS", USAR_TSA_DSS)]:
+        if not i[1]:
+            opciones.append(principal["preferencias"].get(i[0]))
+        elif i[1] == 'y':
+            opciones.append(True)
+        else: # 'n'
+            opciones.append(False)
+
+    actualizado["preferencias"] = {k: opciones[idx] for idx, k in enumerate(principal["preferencias"], 0)}
+    opciones.clear() # no es necesario pero solo por estetica visual
+
+    toml_actualizado = tomli_w.dumps(actualizado)
+    print()
+    logger.info("Guardando...")
+    try:
+        with open(principal_config_path, "w") as f:
+            f.write(toml_actualizado)
+    except Exception as e:
+        logger.error("Error al guardar configuración (%s)", e)
+        return False
+
+    else:
+        logger.info("Nuevos parametros guardados!")
+        return True
 
 #def change_username():
 #    users = load_state_users()
