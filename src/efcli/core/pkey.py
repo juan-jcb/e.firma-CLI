@@ -1,9 +1,9 @@
 from pathlib import Path
-from cryptography.hazmat.primitives.serialization import load_der_private_key, load_pem_private_key
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_der_private_key, load_pem_private_key
 from asn1crypto.cms import ContentInfo
 #from asn1crypto.tsp import TSTInfo
 
-def es_pkey_cifrada(pkey: str | Path) -> tuple[bool, str]:
+def es_pkey_cifrada(ruta_pkey: str | Path) -> tuple[bool, str]:
     '''
     Determina si una pkey está cifrada, además del tipo de encode que usa:
     DER o PEM.
@@ -13,7 +13,7 @@ def es_pkey_cifrada(pkey: str | Path) -> tuple[bool, str]:
     indicando el tipo de encode, ej: (True, "DER"), (False, "PEM")
     '''
 
-    with open(pkey, 'rb') as b:
+    with open(ruta_pkey, 'rb') as b:
         data = b.read()
 
     # Primero intenta cargar en DER; encode que entrega el SAT para las claves,
@@ -36,7 +36,7 @@ def es_pkey_cifrada(pkey: str | Path) -> tuple[bool, str]:
     else:
         return (False, "DER")
 
-def es_passwd_de_pkey(ruta_pkey: str, tipo_encode: str, passwd: str) -> bool:
+def es_passwd_de_pkey(ruta_pkey: str | Path, tipo_encode: str, passwd: str) -> bool:
     '''
     Confirma si la passphrase de una determinada pkey puede descifrarla.\n
     Usar después de `es_pkey_cifrada()` para usar correctamente el tipo de encode.
@@ -63,6 +63,23 @@ def es_passwd_de_pkey(ruta_pkey: str, tipo_encode: str, passwd: str) -> bool:
         return False
     else:
         return True
+
+def bytes_publicos(ruta_pkey: str | Path, encode: str = "DER", password: bytes = b'') -> bytes:
+    '''
+    Retorna los bytes de una clave pública RSA desde la clave privada.
+    
+    Se asume que cuando se llama a ésta función ya se ha determinado
+    encode y contraseña.
+    '''
+    with open(ruta_pkey, 'rb') as b:
+        data = b.read()
+
+    if encode == "DER":
+        pkey = load_der_private_key(data=data, password=password)
+    elif encode == "PEM":
+        pkey = load_pem_private_key(data=data, password=password)
+
+    return pkey.public_key().public_bytes(encoding=Encoding.DER, format=PublicFormat.PKCS1)
 
 def extraer_tst_general(tst: bytes) -> bytes | None:
     '''

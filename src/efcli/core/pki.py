@@ -1,6 +1,5 @@
-import asyncio
+import logging, asyncio
 from binascii import unhexlify
-from colorama import Fore
 
 from asn1crypto import pem, x509 as asn1_x509
 from cryptography import x509 as crypto_x509
@@ -8,6 +7,8 @@ from cryptography.hazmat.primitives.serialization import Encoding
 
 from pyhanko_certvalidator import CertificateValidator, ValidationContext, ValidationPath
 from pyhanko_certvalidator.errors import ExpiredError
+
+logger = logging.getLogger(__name__)
 
 def get_validation_context(trust_roots: str, intermediate_cas: str) -> ValidationContext:
     '''
@@ -76,7 +77,7 @@ def get_validation_context(trust_roots: str, intermediate_cas: str) -> Validatio
 
     return pki_ctx
 
-def get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="firmante") -> ValidationPath:
+def get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="firmante") -> ValidationPath | None:
     '''
     Obtén la cadena de confianza completa en base a un x509.
     
@@ -111,13 +112,38 @@ def get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="
                 ).async_validate_usage(key_usage={}, extended_key_usage={"ocsp_signing"})
             )
 
+    # pyhanko_certvalidator.errors.ExpiredError: The path could not be validated because the end-entity certificate expired 2026-04-23 17:13:16Z
     except ExpiredError as e:
-        print(f'\n[{Fore.RED}ERROR{Fore.WHITE}] Certificado X.509 EXPIRADO: {e.expired_dt.strftime("%Y-%m-%dT%H:%M:%SZ")}')
-        return False
-        # pyhanko_certvalidator.errors.ExpiredError: The path could not be validated because the end-entity certificate expired 2026-04-23 17:13:16Z
-
+        logger.error("Certificado X.509 EXPIRADO: %s", e.expired_dt.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        return None
+    except Exception as e:
+        logger.error(e)
+        return None
     else:
         return chain_path
+
+def es_cert_banxico(cert: asn1_x509.Certificate) -> bool:
+    '''
+    Determina si un x509 pertenece a la PKI de Banxico.
+    
+    Esta función utiliza los bundles de PKI desde 'assets/' por lo que no depende de
+    que exista un entorno XDG previo.
+    '''
+    from efcli.config import PKI_ASSETS
+    TRUST_ROOTS = PKI_ASSETS[0]
+    INTERMEDIATE_CAS = PKI_ASSETS[1]
+
+    pki_ctx = get_validation_context(trust_roots=TRUST_ROOTS, intermediate_cas=INTERMEDIATE_CAS)
+
+    # TODO: no me termina de convencer esta estructura, de momento asumimos que hay solo 2 tipos de end-entities, firmantes y responders
+    try:
+        chain = get_ca_chain(cert=cert, pki_ctx=pki_ctx)
+    except Exception:
+        chain = get_ca_chain(cert=cert, pki_ctx=pki_ctx, tipo="ocsp_responder")
+    
+    if not chain:
+        return False
+    return True
 
 def hacer_cadena_pem(chain_path: ValidationPath, elementos: str = "full_chain") -> bytes:
     '''

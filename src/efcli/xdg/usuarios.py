@@ -1,8 +1,10 @@
-import logging, tomllib, json, time, sys
+import logging, getpass, tomllib, json, time, sys
 from pathlib import Path
+from hashlib import sha256
+from colorama import Fore
 
 from .xdg_config import STATE_USERS_FILE, CONFIG_DIR
-from efcli.core import registros, wrappers, regex, x509, pkey
+from efcli.core import registros, wrappers, regex, pki, x509, pkey
 
 from . import mensajes
 from .bootstrap import check_env
@@ -52,7 +54,6 @@ def new_user(mensajes: dict, es_init: bool = False):
 
     # 3. archivos de e.firma
     # TODO: confirmar que el cert ingresado pertenezca a la PKI de Banxico. si no, salir con mensaje informativo
-    # TODO: confirmar que la clave pública del x509 y la clave pública derivada de la privada coincidan mediante fingreprint para establecer relación del material criptográfico
     print(mensajes['archivos_efirma'])
     while True:
         cert_input = Path(input("Ruta absoluta del certificado del firmante (.cer): "))
@@ -63,8 +64,16 @@ def new_user(mensajes: dict, es_init: bool = False):
                 logger.warning("El archivo ingresado no es un certificado. Ingreselo nuevamente.")
                 continue
             else:
-                print(f"Correcto. {x509.leer_subject_simple(crt)} ({encode})")
+                logger.info("Certificado cargado.")
+                logger.info("Validando contra PKI de Banxico...")
+                if not pki.es_cert_banxico(cert=crt):
+                    logger.error("El certificado ingresado NO pertence a la PKI del Banco de México!! Ingrese un certificado nuevamente.")
+                    continue
+                print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Su certificado pertenece a la PKI de Banxico!")
+                print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Entidad: {x509.leer_subject_simple(crt)} ({encode})")
+                
                 CERT_USUARIO = USER_DIR / f"{NOMBRE_USUARIO}.crt"
+                fingerprint_pubcrt = crt.public_key.sha256
                 break
         else:
             logger.warning("La ruta es incorrecta, ingresela de nuevo!")
@@ -74,21 +83,38 @@ def new_user(mensajes: dict, es_init: bool = False):
         pkey_input = Path(input("Ruta absoluta de la clave privada del firmante (.key): "))
         if pkey_input.is_file():
             try:
-                cifrada, encode = pkey.es_pkey_cifrada(pkey=pkey_input)
+                cifrada, encode = pkey.es_pkey_cifrada(ruta_pkey=pkey_input)
             except Exception:
                 logger.warning("El archivo ingresado no es una clave privada. Ingresela nuevamente.")
                 continue
             else:
                 if cifrada:
-                    print(f"Correcto. Clave privada cifrada ({encode})")
+                    logger.warning("Clave privada (%s) CIFRADA!", encode)
+                    logger.info("Para garantizar identidad criptográfica es necesario comparar si la clave que ingresó es la misma que en el certificado!")
+                    logger.info("Descifre su clave para calcular valores públicos y compararlos (no se almacena nunca su contraseña).")
+                    while True:
+                        password = getpass.getpass(prompt="Ingrese su contraseña: ", echo_char="*").encode('utf-8')
+                        if pkey.es_passwd_de_pkey(ruta_pkey=pkey_input, tipo_encode=encode, passwd=password):
+                            break
+                        else:
+                            print("Contraseña INCORRECTA, vuelva a ingresarla.")
                 else:
-                    print(f"Correcto. Clave privada SIN cifrado ({encode})")
+                    logger.info("Clave privada (%s) SIN cifrado.", encode)
+                    password = b''
                 
+                logger.info("Comparando fingreprints...")
+                fingerprint_pubkey = sha256(data=pkey.bytes_publicos(ruta_pkey=pkey_input, encode=encode, password=password)).digest()
+                if not fingerprint_pubcrt == fingerprint_pubkey:
+                    logger.error("El fingerprint de su clave NO coincide con el de la clave en el certificado! ¿Ingresó una diferente?")
+                    continue
+                
+                print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Claves COINCIDEN!")
+                print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Fingreprint SHA-256: {fingerprint_pubcrt.hex(sep=":").upper()}")
                 PKEY_USUARIO = USER_DIR / f"{NOMBRE_USUARIO}.key"
                 break
         else:
             logger.warning("La ruta es incorrecta, ingresela de nuevo!")
-    time.sleep(1)
+    time.sleep(2)
     sys.stdout.write("\033[H\033[2J")
 
     # 4. metadatos de firma
