@@ -8,13 +8,21 @@ logger = logging.getLogger(__name__)
 
 MAIN_ENV_DIRS = (xdg_config.CONFIG_DIR, xdg_config.DATA_DIR, xdg_config.STATE_DIR) # GLOBAL_CONFIG_FILE['pdf_ruta_base']
 
-def check_env(log_level=logging.INFO):
-    '''
+def check_env(log_level=logging.INFO) -> bool:
+    """
     Evaluación en 2 partes sobre la integridad del entorno externo XDG.
 
         1. Qué los directorios de entorno existan
         2. Qué la configuración de estádo sea coherente.
-    '''
+
+    :param log_level:
+        Constante de nivel de `logging`. La evaluación del entorno
+        imprime mensajes en DEBUG. El valor por defecto es INFO para
+        no mostrar mensajes.
+
+    :return:
+        `bool` de confirmación sobre la integridad del entorno.
+    """
     with registros.modded_logs(target_logger=logger, level=log_level):
 
         logger.debug('=== ESTRUCTURA XDG ===')
@@ -77,7 +85,11 @@ def check_env(log_level=logging.INFO):
 
 @wrappers.salida_limpia()
 @wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
-def reset_env():
+def reset_env() -> None:
+    """
+    Borra el entorno externo XDG.
+    Prompt para confirmar.
+    """
     with open(xdg_config.GLOBAL_CONFIG_FILE, "rb") as f:
         global_config = tomllib.load(f)
 
@@ -92,7 +104,7 @@ def reset_env():
             break
         elif opcion == 'n':
             print('Saliendo...')
-            return False
+            exit()
         else:
             print('Ingrese una opción correcta.')
 
@@ -109,10 +121,13 @@ def reset_env():
             logger.error("%s", e)
 
     logger.info("Entorno externo borrado completamente. (inicie uno nuevamente con 'efcli init')")
-    return True
 
 @wrappers.salida_limpia()
-def init():
+def init() -> None:
+    """
+    Función inicial para crear el entorno XDG externo de e.firma-CLI.
+    Prompt interactivo.
+    """
     import time
     from colorama import Fore
     from efcli.config import PKI_ASSETS

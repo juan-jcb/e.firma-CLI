@@ -1,5 +1,7 @@
-def guardar_archivos(*args, **kwargs):
-    '''
+from pathlib import Path
+
+def guardar_archivos(*args, **kwargs) -> None:
+    """
     Función generalizada para almacenar archivos en X ruta
     asumiendo que el contenido a almacenar existe y es bytes.
 
@@ -17,10 +19,7 @@ def guardar_archivos(*args, **kwargs):
     :param kwargs:
         Pares "clave:valor" donde `clave` es nombre del archivo
         y `valor` son los :class:`Bytes` a escribir.
-    '''
-
-    from pathlib import Path
-
+    """
     ruta = Path(args[0])
     ext = args[1]
     

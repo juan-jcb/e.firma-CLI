@@ -38,13 +38,18 @@ def modded_logs(
     formatter_class=ColorFormatter
 ):
     """
-    Cambia temporalmente el formato del logger mientras se esté dentro de cualquier
-    `with`, y al salir del bloque se restaura el formato original automáticamente.
+    Cambia temporalmente el formato del logger mientras se esté dentro
+    de cualquier bloque `with`, y al salir del bloque se restaura el
+    formato original automáticamente.
 
-    Args:
-        fmt: Formato deseado dentro del bloque with.
-        target_logger: Logger a modificar. Si no se indica, usa el root logger.
-        formatter_class: clase para modificar el formato.
+    :param fmt:
+        Formato deseado dentro del bloque with.
+    
+    :param target_logger:
+        Logger a modificar. Si no se indica, usa el root logger.
+
+    :param formatter_class:
+        clase para modificar el formato.
 
     fmt controla la estructura textual
     formatter_class controla los colores

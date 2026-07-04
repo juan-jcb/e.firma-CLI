@@ -15,18 +15,17 @@ from pyhanko.pdf_utils.reader import PdfFileReader
 from efcli import config
 from efcli.core import wrappers, registros, archivos, pki, x509, pkey
 from efcli.xdg import xdg_config, usuarios
-from efcli.ocsp import ocsp_utils, fetch
+from efcli.ocsp import fetcher, ocsp_utils
 from efcli.pdf import pdf_utils, integridad_pdfs
 
 logger = logging.getLogger(__name__)
 
-@wrappers.salida_limpia()
 def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
     BANXICO_PKI_CTX = pki_ctx
     FIRMANTE = firmante_input['firmante']
     SIG_META = firmante_input['metadatos_firma']
     CAMPO_VISUAL = firmante_input['firma_visible']
-    PREFERENCIAS = firmante_input['preferencias']
+    PERFILES_FIRMA = firmante_input['perfiles_firma']
     PERFIL_FIRMA_PROPUESTO = ['B']
 
     TSA = xdg_config.GLOBAL_CONFIG['TSA']
@@ -62,7 +61,7 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
         print("     • Cadena de confianza establecida.")
 
     print("\n    2. Cargando clave privada del firmante...")
-    res, tipo_pkey = pkey.es_pkey_cifrada(pkey=FIRMANTE['clave_privada'])
+    res, tipo_pkey = pkey.es_pkey_cifrada(ruta_pkey=FIRMANTE['clave_privada'])
     if res == True:
         print("     • Clave privada cifrada.")
         while True:
@@ -128,14 +127,14 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
 
     print("\n    4. Cargando contexto opcional de la firma...")
     # OCSP para estado del firmante (perfil 'L')
-    if PREFERENCIAS['OCSP'] == True:
+    if PERFILES_FIRMA['OCSP'] == True:
         print(f"     • Se utilizará OCSP '{xdg_config.GLOBAL_CONFIG['OCSP']['endpoints'][0]}' para validación externa (Fallbacks: {len(xdg_config.GLOBAL_CONFIG['OCSP']['endpoints'])-1}).")
         PERFIL_FIRMA_PROPUESTO[0] = 'L'
     else:
         print('     • NO se utilizará OCSP para validar su certificado X.509.')
     
     # TST en CMS (perfil 'T')
-    if PREFERENCIAS['TST_CMS'] == True:
+    if PERFILES_FIRMA['TST_CMS'] == True:
         try:
             firmante_simple_ts_cms = timestamps.HTTPTimeStamper(url=TSA['CMS_URI'])
         except Exception:
@@ -149,7 +148,7 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
         firmante_simple_ts_cms = None
 
     # TST en DSS /DocTimeStamp (perfil 'A')
-    if PREFERENCIAS['TST_DSS'] == True:
+    if PERFILES_FIRMA['TST_DSS'] == True:
         try:
             http_ts_dss = timestamps.HTTPTimeStamper(url=TSA['DSS_URI'])
             ts_dss = signers.PdfTimeStamper(timestamper=http_ts_dss)
@@ -211,7 +210,7 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
     #print(f'\n• Documentos a firmar: {PDFs}')
     #print(pki.leer_ca_chain_simple(chain_path=CA_CHAIN_SUBJECT))
     
-    if PREFERENCIAS['OCSP'] == True:
+    if PERFILES_FIRMA['OCSP'] == True:
         print(f"\n{config.MENSAJES_MISC['msj_desfase_temporal']}")
     
     print()
@@ -236,12 +235,11 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
         'tst_dss_timestamper': ts_dss,
         'campo_visual': campo_visual,
 
-        'preferencias': PREFERENCIAS
+        'perfiles_firma': PERFILES_FIRMA
     }
 
     return firmante_ctx
 
-@wrappers.salida_limpia()
 def firma(pdfs: list, firmante_ctx: dict):
     '''
     Firmar digitalmente un PDF. Firmante Individual.
@@ -258,7 +256,7 @@ def firma(pdfs: list, firmante_ctx: dict):
     PERFIL_FIRMA = ['B']
 
     BANXICO_PKI_CTX = firmante_ctx['contexto_pki']
-    USAR_OCSP = firmante_ctx['preferencias']['OCSP']
+    USAR_OCSP = firmante_ctx['perfiles_firma']['OCSP']
     OCSP_URIS = xdg_config.GLOBAL_CONFIG['OCSP']['endpoints']
     OCSP_RESPONSES = None
     OCSP_INFO = None
@@ -295,7 +293,7 @@ def firma(pdfs: list, firmante_ctx: dict):
             # No me termina de agradar esta estructura
             for endpoint in OCSP_URIS:
                 logger.info("Consultando endpoint: %s", endpoint)
-                ocsp_response = fetch.fetch_ocsp(ocsp_request=ocsp_request, endpoint=endpoint)
+                ocsp_response = fetcher.fetch(ocsp_request=ocsp_request, endpoint=endpoint)
                 if ocsp_response:
                     logger.info("Respuesta obtenida.")
                     ocsp_raw_response = ocsp_response.dump()
@@ -647,6 +645,7 @@ def firma(pdfs: list, firmante_ctx: dict):
 
     return True
 
+@wrappers.salida_limpia()
 def hacer_firma():
     USUARIO_PRINCIPAL = usuarios.load_state_users()['principal']
     logger.info("Usando configuración por defecto (%s).", USUARIO_PRINCIPAL)

@@ -20,7 +20,7 @@ def coinstruir_OCSPRequest(cert_client: asn1_x509.Certificate, cert_issuer: asn1
     return req
 
 def parse_response(der_bytes: bytes) -> tuple[bool, str]:
-    '''
+    """
     Parsea una respuesta OCSP en formato estándar de OpenSSL desde
     sus bytes en DER.
 
@@ -28,14 +28,16 @@ def parse_response(der_bytes: bytes) -> tuple[bool, str]:
         bytes en DER de la respuesta OCSP (se asumen bytes de una
         respuesta estructuralmente parseable).
 
-    :return: :class:`tuple` con 2 elementos.\n
+    :return:
+        :class:`tuple` con 2 elementos.
+        
         Indice 0: :class:`bool` de flag indicativo de si la respuesta
         parseada es válida, True para "successful (0x0)", False para
         cualquiera 0x1 - 0x6.
 
         Indice 1: :class:`str` de la respuesta parseada para imprimir
         o almacenar en variable.
-    '''
+    """
 
     status_map = {
         crypto_ocsp.OCSPResponseStatus.SUCCESSFUL: "successful (0x0)",

@@ -4,15 +4,17 @@ from asn1crypto.cms import ContentInfo
 #from asn1crypto.tsp import TSTInfo
 
 def es_pkey_cifrada(ruta_pkey: str | Path) -> tuple[bool, str]:
-    '''
+    """
     Determina si una pkey está cifrada, además del tipo de encode que usa:
     DER o PEM.
 
-    :param ruta_pkey: `str` ruta tipo OS del archivo pkey.
-    :return: `tuple` para desempaquetar con `bool` de respuesta y `str`
-    indicando el tipo de encode, ej: (True, "DER"), (False, "PEM")
-    '''
+    :param ruta_pkey:
+        `str` o `pathlib.Path` de ruta del archivo pkey.
 
+    :return:
+        `tuple` para desempaquetar con `bool` de respuesta y `str` indicando
+        el tipo de encode, ej: (True, "DER"), (False, "PEM")
+    """
     with open(ruta_pkey, 'rb') as b:
         data = b.read()
 
@@ -37,18 +39,22 @@ def es_pkey_cifrada(ruta_pkey: str | Path) -> tuple[bool, str]:
         return (False, "DER")
 
 def es_passwd_de_pkey(ruta_pkey: str | Path, tipo_encode: str, passwd: str) -> bool:
-    '''
-    Confirma si la passphrase de una determinada pkey puede descifrarla.\n
-    Usar después de `es_pkey_cifrada()` para usar correctamente el tipo de encode.
+    """
+    Confirma si la passphrase de una determinada pkey puede descifrarla. Usar
+    después de `es_pkey_cifrada()` para usar correctamente el tipo de encode.
 
-    :param ruta_pkey: Ruta tipo OS del archivo pkey.
-    :param passwd: `str` a probar como passphrase de la pkey.
-    :param tipo_encode: `str` en mayusculas indicando el tipo de encode que utiliza
-    la clave: "DER", "PEM"
+    :param ruta_pkey:
+        `str` o `pathlib.Path` de ruta del archivo pkey.
+    
+    :param passwd:
+        `str` a probar como passphrase de la pkey.
+    
+    :param tipo_encode:
+        `str` mayús indicando el tipo de encode que usa la clave: "DER", "PEM"
 
-    :return: `bool`: `True` si passwd descifra, `False` en caso contrario.
-    '''
-
+    :return:
+        `bool`: `True` si passwd descifra, `False` en caso contrario.
+    """
     with open(ruta_pkey, 'rb') as b:
         data = b.read()
 
@@ -64,13 +70,13 @@ def es_passwd_de_pkey(ruta_pkey: str | Path, tipo_encode: str, passwd: str) -> b
     else:
         return True
 
-def bytes_publicos(ruta_pkey: str | Path, encode: str = "DER", password: bytes = b'') -> bytes:
-    '''
+def bytes_publicos_rsa(ruta_pkey: str | Path, encode: str = "DER", password: bytes = None) -> bytes:
+    """
     Retorna los bytes de una clave pública RSA desde la clave privada.
     
     Se asume que cuando se llama a ésta función ya se ha determinado
     encode y contraseña.
-    '''
+    """
     with open(ruta_pkey, 'rb') as b:
         data = b.read()
 
@@ -82,9 +88,10 @@ def bytes_publicos(ruta_pkey: str | Path, encode: str = "DER", password: bytes =
     return pkey.public_key().public_bytes(encoding=Encoding.DER, format=PublicFormat.PKCS1)
 
 def extraer_tst_general(tst: bytes) -> bytes | None:
-    '''
-    Extrae los bytes DER de un TST en el 'Encapsulated Content Info' general de un TST (CMS Signed Data de TSA).
-    '''
+    """
+    Extrae los bytes DER de un TST en el 'Encapsulated Content Info'
+    general de un TST (CMS Signed Data de TSA).
+    """
     contenedor = ContentInfo.load(encoded_data=tst)
     #if contenedor["content"]["encap_content_info"]["content_type"].native == "tst_info":
     if contenedor["content"]["encap_content_info"]["content_type"].dotted == "1.2.840.113549.1.9.16.1.4":
@@ -93,9 +100,10 @@ def extraer_tst_general(tst: bytes) -> bytes | None:
         return None
 
 def extraer_tst_signer(cms: bytes, signer: int, contrafirma: int) -> bytes:
-    '''
-    Extrae los bytes DER de un TST anidado en las contrafirmas de un SigerInfo.
-    '''
+    """
+    Extrae los bytes DER de un TST anidado en las contrafirmas de un
+    SigerInfo.
+    """
     contenedor = ContentInfo.load(encoded_data=cms)
 
     unsignedAttrs = contenedor["content"]["signer_infos"][signer]["unsigned_attrs"]

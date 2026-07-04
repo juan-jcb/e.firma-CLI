@@ -11,30 +11,39 @@ from pyhanko_certvalidator.errors import ExpiredError
 logger = logging.getLogger(__name__)
 
 def get_validation_context(trust_roots: str, intermediate_cas: str) -> ValidationContext:
-    '''
-    Carga los certificados x509 de las CAs de una determinada PKI para establecer el contexto de validación
-    necesario para operar con sus certificados.
+    """
+    Carga los certificados x509 de las CAs de una determinada PKI para establecer
+    el contexto de validación necesario para operar con sus certificados.
     
-    pyhanko usa ValidationContext para reconstruír las cadenas de confianza 'hacia atrás' desde el certificado
-    de entidad final, seleccionando de los pools disponibles los certificados que encajan (por DN y verificación
-    de firma) hasta llegar a alguno de los trust roots disponibles en un ValidationContext; si hay múltiples
-    caminos posibles, intenta construir uno válido.
+    pyhanko usa ValidationContext para reconstruír las cadenas de confianza
+    'hacia atrás' desde el certificado de entidad final, seleccionando de
+    los pools disponibles los certificados que encajan (por DN y verificación
+    de firma) hasta llegar a alguno de los trust roots disponibles en un
+    ValidationContext; si hay múltiples caminos posibles, intenta construir
+    uno válido.
 
-    Lo que no hace automáticamente es distinguir si un certificado debe pertenecer a trust_roots o a other_certs;
-    esa separación es semántica y responsabilidad de cómo se gestiona el contenido de dichas variables; los de
-    trust_roots se aceptan como ancla de confianza implicita sin verificar quién los emitió, los de other_certs
-    deben estar encadenados lógicamente en su contexto PKI.
+    Lo que no hace automáticamente es distinguir si un certificado debe
+    pertenecer a trust_roots o a other_certs; esa separación es semántica
+    y responsabilidad de cómo se gestiona el contenido de dichas variables;
+    los de trust_roots se aceptan como ancla de confianza implicita sin
+    verificar quién los emitió, los de other_certs deben estar encadenados
+    lógicamente en su contexto PKI.
 
-    Es por tanto, en caso de que se gestione una PKI privada y ya se tenga de antemano un bundle de certificados
-    raíz y de certificados de CA intermedias separados semanticamente, cada uno de estos recopilados se pasaría
-    como variable a los parametros trust_roots y other_certs según corresponda y a partir de ello cada vez que se
-    necesite reconstuír una cadena de confianza completa se ingresa un x509 de entidad final para la construcción
-    del objeto ValidationPath (siempre y cuando este x509 de entidad final pertenezca al contexto de esta PKI
-    y haya sido emitido por cualquiera de las CA en other_certs)
+    Es por tanto, en caso de que se gestione una PKI privada y ya se tenga
+    de antemano un bundle de certificados raíz y de certificados de CA
+    intermedias separados semanticamente, cada uno de estos recopilados
+    se pasaría como variable a los parametros trust_roots y other_certs
+    según corresponda y a partir de ello cada vez que se necesite reconstuír
+    una cadena de confianza completa se ingresa un x509 de entidad final para
+    la construcción del objeto ValidationPath (siempre y cuando este x509
+    de entidad final pertenezca al contexto de esta PKI y haya sido emitido
+    por cualquiera de las CA en other_certs)
 
-    ValidationContext puede tener estado interno relacionado con caché de revocación, por lo que la reutilización
-    del contexto entre validaciones puede resultar problematica (concurrencia, estado corrupto entre validaciones),
-    la opción de uso segura es instanciarlo para cada validación de certificado individual. Por ejemplo:
+    ValidationContext puede tener estado interno relacionado con caché de
+    revocación, por lo que la reutilización del contexto entre validaciones
+    puede resultar problematica (concurrencia, estado corrupto entre validaciones),
+    la opción de uso segura es instanciarlo para cada validación de certificado
+    individual. Por ejemplo:
 
         # Se instancia el contexto estáticamente 1 vez
         context = ValidationContext(
@@ -42,17 +51,24 @@ def get_validation_context(trust_roots: str, intermediate_cas: str) -> Validatio
             other_certs=intermediate_ca_bundle,
         )
 
-        # Por cada certificado de entidad final a validar se instancia el validador derivado del contexto.
+        # Por cada certificado de entidad final a validar se instancia el
+        # validador derivado del contexto:
         for end_entity_cert in end_entity_certs:
             validator = CertificateValidator(end_entity_cert, validation_context=context)
             path = await validator.async_validate_usage({"digital_signature"})
     
-    :param trust_roots: `str` de ruta tipo OS al archivo de CAs raíz en las que se confiará implícitamente.
-    :param intermediate_cas: `str` de ruta tipo OS al archivo de CAs intermedias en las que se confiará
-    implícitamente, DEBE estár relacionada criptográfica y jerarquicamente a las CA raíz de trust_roots.
+    :param trust_roots:
+        `str` de ruta tipo OS al archivo de CAs raíz en las que se
+        confiará implícitamente.
+    
+    :param intermediate_cas:
+        `str` de ruta tipo OS al archivo de CAs intermedias en las
+        que se confiará implícitamente, DEBE estár relacionada
+        criptográfica y jerarquicamente a las CA raíz de trust_roots.
 
-    :return: Objeto `ValidationContext` de la PKI.
-    '''
+    :return:
+        Objeto `ValidationContext` de la PKI.
+    """
 
     # Mientras sean rutas constantes y los bundles PEM estén semánticamente separados no hay problema
     with open(trust_roots, "rb") as f:
@@ -78,20 +94,27 @@ def get_validation_context(trust_roots: str, intermediate_cas: str) -> Validatio
     return pki_ctx
 
 def get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="firmante") -> ValidationPath | None:
-    '''
+    """
     Obtén la cadena de confianza completa en base a un x509.
     
-    :param cert: Objeto `asn1crypto.x509.Certificate` del cual se obtendrá su cadena de confianza completa.
+    :param cert:
+        Objeto `asn1crypto.x509.Certificate` del cual se obtendrá su
+        cadena de confianza completa.
 
-    :param tipo: `str` para definir el "tipo de entidad" según su `key usage` y `extended key usage` ej:
-    "firmante" para FIEL o SELLO (digital_signature), "ocsp_responder" para servidores OCSP.
+    :param tipo:
+        `str` para definir el "tipo de entidad" según su `key usage` y
+        `extended key usage` ej: "firmante" para FIEL o SELLO (digital_signature),
+        "ocsp_responder" para servidores OCSP.
 
-    :param pki_ctx: Objeto `ValidationContext` que define contexto de la PKI bajo la que se reconstruirá la
-    cadena de confianza de `cert`.
+    :param pki_ctx:
+        Objeto `ValidationContext` que define contexto de la PKI bajo la
+        que se reconstruirá la cadena de confianza de `cert`.
 
-    :return: Objeto `ValidationPath` (iterable e indexable) con la cadena de confianza completa en estructura
-    predecible: [root, inter, inter, ..., user] ordenado desde el trust anchor (raíz) hasta el certificado sujeto.
-    '''
+    :return:
+        Objeto `ValidationPath` (iterable e indexable) con la cadena de
+        confianza completa en estructura predecible: [root, inter, ..., user]
+        ordenado desde el trust anchor (raíz) hasta el certificado sujeto.
+    """
 
     try:
         # certs de firmantes en general (FIEL o SELLO)
@@ -123,12 +146,12 @@ def get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="
         return chain_path
 
 def es_cert_banxico(cert: asn1_x509.Certificate) -> bool:
-    '''
+    """
     Determina si un x509 pertenece a la PKI de Banxico.
     
     Esta función utiliza los bundles de PKI desde 'assets/' por lo que no depende de
     que exista un entorno XDG previo.
-    '''
+    """
     from efcli.config import PKI_ASSETS
     TRUST_ROOTS = PKI_ASSETS[0]
     INTERMEDIATE_CAS = PKI_ASSETS[1]
@@ -146,16 +169,21 @@ def es_cert_banxico(cert: asn1_x509.Certificate) -> bool:
     return True
 
 def hacer_cadena_pem(chain_path: ValidationPath, elementos: str = "full_chain") -> bytes:
-    '''
+    """
     Función simple para transformar un objeto `ValidationPath` a una secuencia
     de ascii bytes en estructura PEM. Útil para castear a `str` e imprimir o
     para escribir `bytes` directamente en archivo.
 
-    :param chain_path: Objeto `ValidationPath` con la cadena completa que se
-    serializará a PEM.
-    :param elementos: `str` para indicar que elementos excluír (o no) en la secuencia
-    resultante. Para excluír la end-entity: "no_subject". Por defecto: "full_chain".
-    '''
+    :param chain_path:
+        Objeto `ValidationPath` con la cadena completa que se serializará a PEM.
+    
+    :param elementos:
+        `str` para indicar que elementos excluír (o no) en la secuencia resultante.
+        Para excluír la end-entity: "no_subject". Por defecto: "full_chain".
+
+    :return:
+        `bytes` ascii de la cadena en PEM estilo bundle.
+    """
 
     if elementos == "no_subject":
         longitud_cadena = range(0, len(chain_path) -1) # el end-entity es el último elemento por lo que se excluye
@@ -171,11 +199,10 @@ def hacer_cadena_pem(chain_path: ValidationPath, elementos: str = "full_chain") 
     return cert
 
 def leer_ca_chain_simple(chain_path: ValidationPath) -> str:
-    '''
+    """
     Función simple para leer y almacenar en variable `str` los contenidos
     más relevantes de una cadena de confianza completa en orden comprensible.
-    '''
-
+    """
     longitud_cadena = range(0, len(chain_path))
     entidades = {
         0: "RAIZ DE CONFIANZA",

@@ -11,7 +11,7 @@ from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization, hashes
 
-logging.getLogger("pikepdf").setLevel(logging.WARNING) # pikepdf gestiona su propio logger, mejor silenciar su info y usar solo warning
+logging.getLogger("pikepdf").setLevel(logging.WARNING) # pikepdf gestiona su propio logger, mejor silenciar su INFO y usar solo warning
 from pikepdf import open as pike_open
 
 from pyhanko.pdf_utils.reader import PdfFileReader
@@ -38,7 +38,7 @@ def normalizar_pdf(archivo_obj: Path, pdf_stream: BytesIO) -> Path | None:
 
 @salida_limpia()
 def pre_firma(lista_pdfs: list) -> list | bool:
-    '''
+    """
     Función de comprobación sobre la viabilidad de firma en el/los PDFs originales.
 
     Se realiza una firma básica 'PAdES-B-B' en memoria con una clave privada RSA
@@ -55,7 +55,18 @@ def pre_firma(lista_pdfs: list) -> list | bool:
     necesita certeza de integridad sobre los archivos antes de firmarlos en bucle
     y tener una sesión de firma exitosa independientemente de la cantidad de material
     a firmar.
-    '''
+    
+    :param lista_pdfs:
+        `list` de objetos `Path` con las rutas de todos los .pdf disponibles en la
+        ruta base de firmas
+    
+    :return:
+        `list` de `tuple` con 2 elementos:
+        
+        indice 0: objeto `Path` (normalizado o no) del .pdf a firmar.
+        indice 1: `int` incativo de "la siguiente firma" que será incrustada en el PDF
+        si es que se firma a posteriori.
+    """
 
     dummy_pkey_obj = rsa.generate_private_key(
         public_exponent=65537,
@@ -157,13 +168,13 @@ def pre_firma(lista_pdfs: list) -> list | bool:
                         break
                     elif opcion == 'n':
                         print(f"No es posible firmar en este estado. Saliendo...")
-                        return False
+                        exit()
                     else:
                         print('Ingrese una opción correcta.')
 
                 nuevo_path = normalizar_pdf(archivo_obj=i, pdf_stream=f_stream)
                 if nuevo_path == False:
-                    return False
+                    exit()
 
                 else:
                     # Cuando se normalice un PDF con errores se incrustará el archivo nuevo normalizado (objeto Path)

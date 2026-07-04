@@ -1,8 +1,8 @@
-'''
-Scripts para pruebas de validez operativa de certificados x509 del SAT debido a que si los
-certificados usasen formatos ASN.1 estándar ambas pruebas con cryptography y asn1crypto
-no deberían de mostrar ningún error pero aquí estamos :p
-'''
+"""
+Scripts para pruebas de validez operativa de certificados x509 del SAT debido
+a que si los certificados usasen formatos ASN.1 estándar ambas pruebas con
+cryptography y asn1crypto no deberían de mostrar ningún error, pero aquí estamos :p
+"""
 
 from binascii import unhexlify
 from pathlib import Path
@@ -17,13 +17,37 @@ def leer_campo_en_subject(subject, field):
                 return atv["value"].native
     return ""
 
-def leer_subject_simple(cert: asn1_x509.Certificate):
-    '''
+def leer_human_friendly(string) -> list:
+    lista = []
+    while True:
+        i = string.find(',')
+        if i == -1:
+            lista.append(string)
+            break    
+        lista.append(string[:i])
+        string = string[i+2:] # 2: ', ' 
+    
+    return lista
+
+def imprimir_subject(x509: asn1_x509.Certificate) -> None:
+    print(f'\tCertificado válido desde: {x509.not_valid_before}')
+    print(f'\tCertificado válido hasta: {x509.not_valid_after}')
+    print('\tAún pendiente de validación externa sobre su estado.\n')
+    for i in leer_human_friendly(x509.subject.human_friendly):
+        print(f'\t{i}')
+    print(f'\n\tFingerprint sha1:   {''.join([i for i in x509.sha1_fingerprint if i != ' '])}')
+    print(f'\tFingerprint sha256: {''.join([i for i in x509.sha256_fingerprint if i != ' '])}')
+
+def leer_subject_simple(cert: asn1_x509.Certificate) -> str:
+    """
     Texto compacto con los datos más relevantes de un certificado X.509.
 
-    :param cert: Objeto `asn1crypto.x509.Certificate`
-    :return: `str` con campos y forma: **"CN \\<mail\\> (Serial)"**
-    '''
+    :param cert:
+        Objeto `asn1crypto.x509.Certificate`
+
+    :return:
+        `str` con campos y forma: **"CN \\<mail\\> (Serial)"**
+    """
     serial_asn1 = cert.serial_number
     serial_hex = format(serial_asn1, 'x').upper()
     if len(serial_hex) % 2:
@@ -48,40 +72,22 @@ def leer_subject_simple(cert: asn1_x509.Certificate):
 
     return f"{cn} <{email}> ({serial_sat})"
 
-def leer_human_friendly(string) -> list:
-    lista = []
-    while True:
-        i = string.find(',')
-        if i == -1:
-            lista.append(string)
-            break    
-        lista.append(string[:i])
-        string = string[i+2:] # 2: ', ' 
-    
-    return lista
-
-def imprimir_subject(x509: asn1_x509.Certificate):
-    print(f'\tCertificado válido desde: {x509.not_valid_before}')
-    print(f'\tCertificado válido hasta: {x509.not_valid_after}')
-    print('\tAún pendiente de validación externa sobre su estado.\n')
-    for i in leer_human_friendly(x509.subject.human_friendly):
-        print(f'\t{i}')
-    print(f'\n\tFingerprint sha1:   {''.join([i for i in x509.sha1_fingerprint if i != ' '])}')
-    print(f'\tFingerprint sha256: {''.join([i for i in x509.sha256_fingerprint if i != ' '])}')
-
 def cargar_cert_asn1(cert: str | Path | bytes) -> tuple[asn1_x509.Certificate, str]:
-    '''
-    Debido a que la autoridad certificadora de Banxico no utiliza OIDs estandar en sus x509
-    se requiere utilizar parsers más 'amigables' antes de cargar a los objetos que realizan
-    operaciones con estos (la función normaliza certificados x509 para saltarse el error de
+    """
+    Debido a que la autoridad certificadora de Banxico no utiliza OIDs
+    estandar en sus x509 se requiere utilizar parsers más 'amigables'
+    antes de cargar a los objetos que realizan operaciones con estos
+    (la función normaliza certificados x509 para saltarse el error de
     carga inicial con asn1crypto).
 
-    :param cert: `str` de ruta tipo OS del archivo certificado o `bytes` del certificado a
-    normalizar (maneja ambos encode DER y PEM).
-    :return: `tuple` con objeto `asn1crypto.x509.Certificate` del x509 en cuestión y `str`
-    mayus con el tipo de encode que utiliza (DER o PEM).
-    '''
+    :param cert:
+        `str` o `Path` de ruta OS del archivo certificado, o `bytes`
+        directos  del certificado a normalizar (maneja ambos DER/PEM).
 
+    :return:
+        `tuple` con objeto `asn1crypto.x509.Certificate` del x509 en
+        cuestión y `str` mayus con el tipo de encode que utiliza (DER/PEM).
+    """
     # gestión para recibir tanto bytes como str de rutas OS del certificado.
     if isinstance(cert, bytes):
         cert_bytes = cert
@@ -106,12 +112,11 @@ def cargar_cert_asn1(cert: str | Path | bytes) -> tuple[asn1_x509.Certificate, s
     asn1_cert = asn1_x509.Certificate.load(encoded_data=crypto_cert.public_bytes(encoding=Encoding.DER))
     return (asn1_cert, cert_encode)
 
-def instanciar_certificados_simple(certs: tuple):
+def instanciar_certificados_simple(certs: tuple) -> None:
     """
     Prueba de instanciación simple de certificados x509 con cryptography y asn1crypto
     para probar compatibilidad de parseos.
     """
-
     for i in certs:
         print(f"\n{'='*20} '{i}' {'='*20}")
         
@@ -144,8 +149,8 @@ def instanciar_certificados_simple(certs: tuple):
         else:
             print("[OK] asn1crypto\n")
 
-def recorrer_oids(cert):
-    '''
+def recorrer_oids(cert) -> None:
+    """
     Función para recorrer los OIDs del subject/issuer de un x509 del SAT (instanciado como objeto
     asn1crypto.x509.Certificate)
 
@@ -179,9 +184,7 @@ def recorrer_oids(cert):
 
         Cambiar de:     'unique_identifier': OctetBitString,
         A:              'unique_identifier': DirectoryString,
-
-    '''
-
+    """
     print(f"\n{'='*80}\n")
 
     # cambiar entre subject e issuer en el objeto cert

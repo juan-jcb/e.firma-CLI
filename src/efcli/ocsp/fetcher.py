@@ -1,4 +1,4 @@
-'''
+"""
 Estado del x509 del firmante mediante respuesta OCSP.
     
 Para cada CMS, 1 entrada VRI. El DSS incluirá en /Certs el x509 del responder OCSP
@@ -19,7 +19,7 @@ estrictos o más laxos, esos prevalecen sobre cualquier heurística propia.
 
 El campo "Produced At" se convierte en el único ancla temporal disponible, por lo
 que la ventana se mide desde ahí.
-'''
+"""
 
 import logging, asyncio, ssl, requests, aiohttp
 from asn1crypto import ocsp as asn1_ocsp
@@ -58,8 +58,8 @@ OCSP_HEADERS = {
     "Content-Type": "application/ocsp-request",
 }
 
-def fetch_ocsp(ocsp_request: asn1_ocsp.OCSPRequest, endpoint: str) -> asn1_ocsp.OCSPResponse | None:
-    '''
+def fetch(ocsp_request: asn1_ocsp.OCSPRequest, endpoint: str) -> asn1_ocsp.OCSPResponse | None:
+    """
     Función para hacer fetch manual de respuestas OCSP a endpoints OCSPs públicos.
 
     Se hace POST manual por 2 razones dado el contexto de la PKI del SAT:
@@ -80,7 +80,7 @@ def fetch_ocsp(ocsp_request: asn1_ocsp.OCSPRequest, endpoint: str) -> asn1_ocsp.
     Esto no en sí un impedimento para hacer las peticiones y obtener respuestas útiles ya que
     afortunadamente su servidor HTTP soporta Diffie-Hellman de ECC, por lo que con 'requests'
     se declararán suites de cifrado que explicitamente usen ECDH en lugar de DH modular tradicional.
-    '''
+    """
 
     class TLSAdapter(requests.adapters.HTTPAdapter):
         def __init__(self, ssl_context=None, **kwargs):
@@ -114,7 +114,7 @@ def fetch_ocsp(ocsp_request: asn1_ocsp.OCSPRequest, endpoint: str) -> asn1_ocsp.
             return rsp
 
 # TODO: en futura "firma multiple" lo adecuado sería usar esta función para obtener los estados OCSP.
-async def async_fetch_ocsp(ocsp_request: asn1_ocsp.OCSPRequest, endpoint: str):
+async def async_fetch(ocsp_request: asn1_ocsp.OCSPRequest, endpoint: str):
     conector = aiohttp.TCPConnector(ssl_context=CONTEXTO_TLS, limit=100, ttl_dns_cache=300)
     async with aiohttp.ClientSession(connector=conector) as session:
         try:

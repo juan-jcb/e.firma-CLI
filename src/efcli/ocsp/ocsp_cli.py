@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from cryptography.x509 import ocsp as crypto_ocsp
 
-from . import fetch, ocsp_utils
+from . import fetcher, ocsp_utils
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ def nueva_request(propia: bool = False, cert_file: str = None):
     logger.info("Certificado X.509: %s (%s) %s", sujeto, encode, added_name)
     for i in endpoints:
         logger.info("Consultando endpoint: '%s'", i)
-        response = fetch.fetch_ocsp(ocsp_request=request, endpoint=i)
+        response = fetcher.fetch(ocsp_request=request, endpoint=i)
         if response:
             print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] El endpoint ha respondido.")
             break
@@ -126,7 +126,7 @@ def nueva_request(propia: bool = False, cert_file: str = None):
 
     raw_response   = response.dump()
     pr              = ocsp_utils.parse_response(der_bytes=raw_response)
-    nombre          = f"{cn}.OCSP_{int(time.time())}"
+    nombre          = f"{cn}.OCSP_RESPONSE.{int(time.time())}"
     archivo_binario = {nombre: response.dump()}
     archivo_plano   = {nombre: pr[1].encode('utf-8')} # se escribe bytes
     

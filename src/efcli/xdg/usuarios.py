@@ -3,28 +3,56 @@ from pathlib import Path
 from hashlib import sha256
 from colorama import Fore
 
-from .xdg_config import STATE_USERS_FILE, CONFIG_DIR
 from efcli.core import registros, wrappers, regex, pki, x509, pkey
-
 from . import mensajes
+from .xdg_config import STATE_USERS_FILE, CONFIG_DIR
 from .bootstrap import check_env
 
 logger = logging.getLogger(__name__)
 
 def load_state_users() -> dict:
+    '''
+    Carga el JSON de usuarios desde el directorio de estado (XDG_STATE_HOME).
+    Las funciones que llaman a ésta ya evaluan entorno externo viable.
+    '''
     with open(STATE_USERS_FILE, "r") as f:
         return json.loads(s=f.read())
 
-def load_current_user_conf():
-    # Carga archivo de usuarios (el toml del usuario referenciado en el archivo de estado)
+def load_current_user_conf() -> dict:
+    '''
+    Carga el TOML de configuración del usuario principal (JSON de usuarios -> TOML del principal).
+    Las funciones que llaman a ésta ya evaluan entorno externo viable.
+    '''
     users = load_state_users()
     with open(users['usuarios'].get(users['principal'])['config_file'], "rb") as f:
         return tomllib.load(f)
 
-def new_user(mensajes: dict, es_init: bool = False):
-    # 1. Directorio de firmas (se muestra en init(), aunque técnicamente esté disponible aquí.)
+def new_user(mensajes: dict, es_init: bool = False) -> dict:
+    """
+    Plantilla general de inputs para creación de nuevos usuarios. Se usa
+    principalmente en 'efcli init' y 'efcli user --add'.
+    
+    :param mensajes:
+        `dict` de `efcli.xdg.mensajes` con los textos para mostrar en cada paso
+        de la creación del usuario para gestionar el contexto, descripciones
+        cortas o descripciones largas de cada paso.
 
-    # 2. nombre de usuario
+    :param es_init:
+        `bool` para indicar si es ejecución de init() y entrar a bloque de
+        gestión para usuarios actuales.
+        `False` asume entorno externo viable previo (usuarios ya existentes)
+        y evalua nuevas entradas de forma acorde.
+        `True` no asume entorno externo previo: lógica de ejecución tipica
+        de init().
+    
+    :return dict:
+        Diccionario de estructura predecible para utilizarse como plantilla
+        de usuario nuevo para desglosar su lógica posterior para el guardado
+        de dichos datos.
+    """
+    # 1. Directorio de firmas (se maneja solo en init())
+
+    # 2. Nombre de usuario local
     print(mensajes['usuario_local'])
     if not es_init:
         users = load_state_users()
@@ -52,8 +80,7 @@ def new_user(mensajes: dict, es_init: bool = False):
     USER_DIR = CONFIG_DIR / NOMBRE_USUARIO
     USER_CONFIG_FILE = USER_DIR / f"{NOMBRE_USUARIO}.toml"
 
-    # 3. archivos de e.firma
-    # TODO: confirmar que el cert ingresado pertenezca a la PKI de Banxico. si no, salir con mensaje informativo
+    # 3. Archivos de e.firma
     print(mensajes['archivos_efirma'])
     while True:
         cert_input = Path(input("Ruta absoluta del certificado del firmante (.cer): "))
@@ -78,7 +105,8 @@ def new_user(mensajes: dict, es_init: bool = False):
         else:
             logger.warning("La ruta es incorrecta, ingresela de nuevo!")
             continue
-
+    
+    print()
     while True:
         pkey_input = Path(input("Ruta absoluta de la clave privada del firmante (.key): "))
         if pkey_input.is_file():
@@ -100,10 +128,10 @@ def new_user(mensajes: dict, es_init: bool = False):
                             print("Contraseña INCORRECTA, vuelva a ingresarla.")
                 else:
                     logger.info("Clave privada (%s) SIN cifrado.", encode)
-                    password = b''
+                    password = None
                 
                 logger.info("Comparando fingreprints...")
-                fingerprint_pubkey = sha256(data=pkey.bytes_publicos(ruta_pkey=pkey_input, encode=encode, password=password)).digest()
+                fingerprint_pubkey = sha256(data=pkey.bytes_publicos_rsa(ruta_pkey=pkey_input, encode=encode, password=password)).digest()
                 if not fingerprint_pubcrt == fingerprint_pubkey:
                     logger.error("El fingerprint de su clave NO coincide con el de la clave en el certificado! ¿Ingresó una diferente?")
                     continue
@@ -114,10 +142,10 @@ def new_user(mensajes: dict, es_init: bool = False):
                 break
         else:
             logger.warning("La ruta es incorrecta, ingresela de nuevo!")
-    time.sleep(2)
+    time.sleep(2.5)
     sys.stdout.write("\033[H\033[2J")
 
-    # 4. metadatos de firma
+    # 4. Metadatos de firma
     print(mensajes['metadatos_firma'])
     ID_FIRMA        = regex.input_regex(patron=regex.ALFANUMERICO, mensaje="Identificador de la firma: ", pista="Alfanumerico mayus/minus.")
     NOMBRE_FIRMANTE = regex.input_regex(patron=regex.SPANISH, mensaje="Nombre del firmante: ", pista="Solo caracteres del alfabeto en español.")
@@ -127,14 +155,14 @@ def new_user(mensajes: dict, es_init: bool = False):
     time.sleep(1)
     sys.stdout.write("\033[H\033[2J")
 
-    # 5. preferencias sobre el perfil de firma
+    # 5. Preferencias de perfil de firma.
     print(mensajes['pefiles_firma'])
     USAR_OCSP    = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar validación OCSP? (y/n): ", pista='Solo letras "y", "n".')
     USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo TST en su contenedor firma? (y/n): ", pista='Solo letras "y", "n".')
     USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo TST en PDF (/DocTimeStamp)? (y/n): ", pista='Solo letras "y", "n".')
-    opciones = [f"{i == 'y'}".lower() for i in [USAR_OCSP, USAR_TSA_CMS, USAR_TSA_DSS]] # me parace cutre, pero eh, deja en minisculas un mapeo de booleanos para usar toml
+    preferencias_perfil = [f"{i == 'y'}".lower() for i in [USAR_OCSP, USAR_TSA_CMS, USAR_TSA_DSS]] # me parace cutre, pero eh, deja en minisculas un mapeo de booleanos para usar toml
 
-    # #!. skeleton de usuario
+    # #!. skeleton de usuario (string -> TOML, TOML -> dict)
     SKEL_USER = f'''# Configuración de usuario {NOMBRE_USUARIO}
 
 [firmante]
@@ -147,6 +175,14 @@ nombre_firmante = "{NOMBRE_FIRMANTE}"
 razon = "{RAZON}"
 lugar = "{LUGAR}"
 contacto = "{CONTACTO}"
+    
+[perfiles_firma]
+# validación externa sobre el x509 del firmante con OCSP (Eleva de Perfil B a Pefil L)
+OCSP = {preferencias_perfil[0]}
+# TST en el CMS del firmante (Añade Perfil T)
+TST_CMS = {preferencias_perfil[1]}
+# TST en /DocTimeStamp del PDF (Añade Perfil A)
+TST_DSS = {preferencias_perfil[2]}
 
 [firma_visible]
 usar = false
@@ -161,23 +197,13 @@ alto = 50
 # Posición en X e Y
 coords_x = 200
 coords_y = 85
-    
-[preferencias]
-# validación externa sobre el x509 del firmante con OCSP (Eleva de Perfil B a Pefil L)
-OCSP = {opciones[0]}
-
-# TST en el CMS del firmante (Añade Perfil T)
-TST_CMS = {opciones[1]}
-
-# TST en /DocTimeStamp del PDF (Añade Perfil A)
-TST_DSS = {opciones[2]}
 
 # Según el flujo de operaciones PAdES, la configuración de una TSA para timestamping en DSS NO debería
-# estár en éste dirccionario, sin embargo un firmante individual, dado que es el único participante
-# tiene poder de desición completo sobre si quiere utilizar TSTs incrementales o no en el /DocTimeStamp
-# de los PDFs que firma, por lo que la configuración de una TSA para este proposito adquiere indirectamente
-# el caracter de "metadatos de firma del firmante" y se prefiere en este diccionario (aunque técnicamente
-# no pertenezca a los metadatos "reales" de su firma).
+# estár en el dirccionario de preferencias, sin embargo un firmante individual, dado que es el único
+# participante tiene poder de desición completo sobre si quiere utilizar TSTs incrementales o no en el
+# /DocTimeStamp de los PDFs que firma, por lo que la configuración de una TSA para este proposito adquiere
+# indirectamente el caracter de "metadatos de firma del firmante" y se prefiere en este diccionario
+# (aunque técnicamente no pertenezca a los metadatos "reales" de su firma).
     
 # Caso contrario en firma múltiple de 2 o más: todos los firmantes deben firmar primero y acordar si al
 # final de la sesión de firma se añade el TST incremental sobre lo firmado; haciendola una decisión
@@ -200,80 +226,13 @@ TST_DSS = {opciones[2]}
         "skel": SKEL_USER
     }
 
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
-def list_users():
-    logger.info("=== USUARIOS ===")
-    with open(STATE_USERS_FILE, "r") as f:
-        usuarios = json.loads(s=f.read())
-
-    logger.info("Principal: %s", usuarios['principal'])
-    for idx, i in enumerate(iterable=usuarios['usuarios'].keys(), start=1):
-        logger.info("%s: %s", idx, i)
-        for v, k in usuarios['usuarios'][i].items(): # porque son diccionarios
-            if not Path(k).exists():
-                logger.info("[%s] '%s' no fue encontrado.", i , k)
-                return False
-            logger.info("   %s: '%s'", v, k)
-
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
-def print_current_user():
-    users = load_state_users()
-    principal_name = users.get('principal')
-    principal_dict = users['usuarios'].get(users['principal'])
-    cert_path = principal_dict['cert']
-    with open(cert_path, "rb") as f:
-        cert, _ = x509.cargar_cert_asn1(cert=f.read())
-
-    with registros.modded_logs(target_logger=logger, level=logging.DEBUG):
-        logger.debug("Usuario: %s", principal_name)
-        logger.debug("e.firma: %s", x509.leer_subject_simple(cert))
-
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
-def print_current_user_conf():
-    users = load_state_users()
-    principal_name = users.get('principal')
-    principal_dict = users['usuarios'].get(users['principal'])
-    cert_path = principal_dict['cert']
-
-    with open(users['usuarios'].get(users['principal'])['config_file'], "rb") as f:
-        cnf = tomllib.load(f)
-    with open(cert_path, "rb") as f:
-        cert, _ = x509.cargar_cert_asn1(cert=f.read())
-
-    with registros.modded_logs(target_logger=logger, level=logging.DEBUG):
-        logger.debug("CONFIGURACIÓN DE USUARIO: '%s'", principal_name)
-        logger.debug("=== E.FIRMA ===", )
-        logger.debug("Propietario: %s", x509.leer_subject_simple(cert))
-        logger.debug("Certificado: '%s'", cnf['firmante']['certificado'])
-        logger.debug("Clave privada: '%s'", cnf['firmante']['clave_privada'])
-        logger.debug("=== METADATOS DE FIRMA ===", )
-        logger.debug("Identificador: '%s'", cnf['metadatos_firma']['nombre_firma'])
-        logger.debug("Firmante: '%s'", cnf['metadatos_firma']['nombre_firmante'])
-        logger.debug("Razón: '%s'", cnf['metadatos_firma']['razon'])
-        logger.debug("Lugar: '%s'", cnf['metadatos_firma']['lugar'])
-        logger.debug("Correo: '%s'", cnf['metadatos_firma']['contacto'])
-        logger.debug("=== CAMPO VISIBLE DE FIRMA ===", )
-        logger.debug("Usar firma visible: %s", cnf['firma_visible']['usar'])
-        logger.debug("Página: %s", cnf['firma_visible']['pagina'])
-        logger.debug("Ancho: %s", cnf['firma_visible']['ancho'])
-        logger.debug("Alto: %s", cnf['firma_visible']['alto'])
-        logger.debug("Coordenadas en X: %s", cnf['firma_visible']['coords_x'])
-        logger.debug("Coordenadas en Y: %s", cnf['firma_visible']['coords_y'])
-        logger.debug("=== PREFERENCIAS DE FIRMA ===", )
-        logger.debug("Validación OCSP (L): %s", cnf['preferencias']['OCSP'])
-        logger.debug("Sello de tiempo en firma (T): %s", cnf['preferencias']['TST_CMS'])
-        logger.debug("Sello de tiempo en PDF (A): %s", cnf['preferencias']['TST_DSS'])
-
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
-def print_current_user_toml():
-    users = load_state_users()
-    with open(users['usuarios'].get(users['principal'])['config_file'], "r") as f:
-        print(f.read())
-
 @wrappers.salida_limpia()
 @wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
-def add_user():
-    # Para añadir un usuario se asume entorno viable (validado en conmutador)
+def add_user() -> None:
+    """
+    Función de prompt interactivo para añadir a un usuario nuevo. Uso post-init.
+    Se asume entorno externo viable.
+    """
     nuevo = new_user(mensajes=mensajes.mensajes_adduser, es_init=False)
     if nuevo:
         import shutil
@@ -304,7 +263,13 @@ def add_user():
 
 @wrappers.salida_limpia()
 @wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
-def del_user():
+def del_user() -> None:
+    """
+    Función de prompt interactivo para borrar a un usuario del JSON de usuarios.
+    Para borrar require haber minimo 2 usuarios.
+    No se puede borrar a usuario principal.
+    Se asume entorno externo viable.
+    """
     users = load_state_users()
 
     logger.info("=== Usuarios Actuales ===")
@@ -314,7 +279,7 @@ def del_user():
 
     if len(users['usuarios']) == 1:
         logger.error("No puede borrar usuarios habiendo solo 1 (ㆆ_ㆆ) Saliendo...")
-        return False
+        exit()
 
     print()
     while True:
@@ -337,7 +302,7 @@ def del_user():
             break
         elif confirmar == 'n':
             print('Saliendo...')
-            return False
+            exit()
         else:
             print('Ingrese una opción correcta.')
 
@@ -346,13 +311,13 @@ def del_user():
         shutil.rmtree(users['usuarios'][seleccionado]['user_dir'])
     except FileNotFoundError:
         logger.error("El directorio no existe: '%s'", i)
-        return False
+        exit()
     except PermissionError:
         logger.error("Sin permisos para eliminar: '%s'", i)
-        return False
+        exit()
     except Exception as e:
         logger.error("%s", e)
-        return False
+        exit()
     else:
         del(users['usuarios'][seleccionado])
         updated_users = json.dumps(obj=users, indent=2, ensure_ascii=False)
@@ -360,11 +325,15 @@ def del_user():
             f.write(updated_users)
 
         logger.info("Usuario '%s' borrado correctamente!", seleccionado)
-        return True
 
 @wrappers.salida_limpia()
 @wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
-def change_user():
+def change_user() -> None:
+    """
+    Función de prompt interactivo para cambiar de usuario principal según
+    los usuarios que hayan disponibles en el JSON de usuarios.
+    Se asume entorno externo viable.
+    """
     users = load_state_users()
 
     logger.info("=== Usuarios Actuales ===")
@@ -374,7 +343,7 @@ def change_user():
 
     if len(users['usuarios']) == 1:
         logger.error("No puede cambiar de usuario habiendo solo 1 (ㆆ_ㆆ) Saliendo...")
-        return False
+        exit()
 
     print()
     while True:
@@ -395,9 +364,9 @@ def change_user():
 
     print()
     logger.info("Bienvenido '%s'!", seleccionado)
-    return True
 
-def reconf_user():
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+def reconf_user() -> None:
     '''
     Función de prompt interactivo para reelegir parametros variables en la configuración
     del usuario principal: Metadatos de firma, Perfil de firma, firma visible.
@@ -405,6 +374,8 @@ def reconf_user():
     Se retoma la misma estructura de formulario de creación de usuario agregando con la
     caracteristica especifica de que si se introducen cadenas vacias se REUTILIZARÁN los
     valores preexistentes en la config del principal.
+
+    Se asume entorno externo viable.
     '''
     import tomli_w
     
@@ -428,9 +399,9 @@ def reconf_user():
     # 5. preferencias sobre el perfil de firma
     print()
     logger.info("=== PERFILES DE FIRMA ===")
-    USAR_OCSP    = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Validación OCSP [{principal["preferencias"]["OCSP"]}] (y/n): ", pista='Solo letras "y", "n".')
-    USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo TST en su contenedor firma [{principal["preferencias"]["TST_CMS"]}] (y/n): ", pista='Solo letras "y", "n".')
-    USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo TST en PDF (/DocTimeStamp) [{principal["preferencias"]["TST_DSS"]}] (y/n): ", pista='Solo letras "y", "n".')
+    USAR_OCSP    = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Validación OCSP [{principal["perfiles_firma"]["OCSP"]}] (y/n): ", pista='Solo letras "y", "n".')
+    USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo TST en su contenedor firma [{principal["perfiles_firma"]["TST_CMS"]}] (y/n): ", pista='Solo letras "y", "n".')
+    USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo TST en PDF (/DocTimeStamp) [{principal["perfiles_firma"]["TST_DSS"]}] (y/n): ", pista='Solo letras "y", "n".')
 
     # relación semántica hardcodeada, funciona pero me parece cuestionable.
     for i in [("nombre_firma", ID_FIRMA), ("nombre_firmante", NOMBRE_FIRMANTE), ("razon", RAZON), ("lugar", LUGAR), ("contacto", CONTACTO)]:
@@ -444,13 +415,12 @@ def reconf_user():
 
     for i in [("OCSP", USAR_OCSP), ("TST_CMS", USAR_TSA_CMS), ("TST_DSS", USAR_TSA_DSS)]:
         if not i[1]:
-            opciones.append(principal["preferencias"].get(i[0]))
+            opciones.append(principal["perfiles_firma"].get(i[0]))
         elif i[1] == 'y':
             opciones.append(True)
         else: # 'n'
             opciones.append(False)
-
-    actualizado["preferencias"] = {k: opciones[idx] for idx, k in enumerate(principal["preferencias"], 0)}
+    actualizado["perfiles_firma"] = {k: opciones[idx] for idx, k in enumerate(principal["perfiles_firma"], 0)}
     opciones.clear() # no es necesario pero solo por estetica visual
 
     toml_actualizado = tomli_w.dumps(actualizado)
@@ -461,11 +431,10 @@ def reconf_user():
             f.write(toml_actualizado)
     except Exception as e:
         logger.error("Error al guardar configuración (%s)", e)
-        return False
+        exit()
 
     else:
         logger.info("Nuevos parametros guardados!")
-        return True
 
 #def change_username():
 #    users = load_state_users()
@@ -495,3 +464,89 @@ def reconf_user():
 #        users['principal'] = nuevo_nombre
 #    
 #    # TODO: TERMINAAAR
+
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+def print_current_user() -> None:
+    """
+    Imprime un resumen compacto sobre el usuario principal.
+    Se asume entorno externo viable.
+    """
+    users = load_state_users()
+    principal_name = users.get('principal')
+    principal_dict = users['usuarios'].get(users['principal'])
+    cert_path = principal_dict['cert']
+    with open(cert_path, "rb") as f:
+        cert, _ = x509.cargar_cert_asn1(cert=f.read())
+
+    with registros.modded_logs(target_logger=logger, level=logging.DEBUG):
+        logger.debug("Usuario: %s", principal_name)
+        logger.debug("e.firma: %s", x509.leer_subject_simple(cert))
+
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+def print_current_user_conf() -> None:
+    """
+    Imprime la configuración del usuario principal de forma compacta y legible (estiliza su TOML).
+    Se asume entorno externo viable.
+    """
+    users = load_state_users()
+    principal_name = users.get('principal')
+    principal_dict = users['usuarios'].get(users['principal'])
+    cert_path = principal_dict['cert']
+
+    with open(users['usuarios'].get(users['principal'])['config_file'], "rb") as f:
+        cnf = tomllib.load(f)
+    with open(cert_path, "rb") as f:
+        cert, _ = x509.cargar_cert_asn1(cert=f.read())
+
+    with registros.modded_logs(target_logger=logger, level=logging.DEBUG):
+        logger.debug("CONFIGURACIÓN DE USUARIO: '%s'", principal_name)
+        logger.debug("=== E.FIRMA ===", )
+        logger.debug("Propietario: %s", x509.leer_subject_simple(cert))
+        logger.debug("Certificado: '%s'", cnf['firmante']['certificado'])
+        logger.debug("Clave privada: '%s'", cnf['firmante']['clave_privada'])
+        logger.debug("=== METADATOS DE FIRMA ===", )
+        logger.debug("Identificador: '%s'", cnf['metadatos_firma']['nombre_firma'])
+        logger.debug("Firmante: '%s'", cnf['metadatos_firma']['nombre_firmante'])
+        logger.debug("Razón: '%s'", cnf['metadatos_firma']['razon'])
+        logger.debug("Lugar: '%s'", cnf['metadatos_firma']['lugar'])
+        logger.debug("Correo: '%s'", cnf['metadatos_firma']['contacto'])
+        logger.debug("=== CAMPO VISIBLE DE FIRMA ===", )
+        logger.debug("Usar firma visible: %s", cnf['firma_visible']['usar'])
+        logger.debug("Página: %s", cnf['firma_visible']['pagina'])
+        logger.debug("Ancho: %s", cnf['firma_visible']['ancho'])
+        logger.debug("Alto: %s", cnf['firma_visible']['alto'])
+        logger.debug("Coordenadas en X: %s", cnf['firma_visible']['coords_x'])
+        logger.debug("Coordenadas en Y: %s", cnf['firma_visible']['coords_y'])
+        logger.debug("=== PREFERENCIAS DE FIRMA ===", )
+        logger.debug("Validación OCSP (L): %s", cnf['perfiles_firma']['OCSP'])
+        logger.debug("Sello de tiempo en firma (T): %s", cnf['perfiles_firma']['TST_CMS'])
+        logger.debug("Sello de tiempo en PDF (A): %s", cnf['perfiles_firma']['TST_DSS'])
+
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+def print_current_user_toml() -> None:
+    """
+    Imprime la configuración del usuario principal tal cual desde su TOML.
+    Se asume entorno externo viable.
+    """
+    users = load_state_users()
+    with open(users['usuarios'].get(users['principal'])['config_file'], "r") as f:
+        print(f.read())
+
+@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+def list_users() -> None:
+    """
+    Imprime los usuarios disponibles en el programa desde el JSON de usuarios.
+    Se asume entorno externo viable.
+    """
+    logger.info("=== USUARIOS ===")
+    with open(STATE_USERS_FILE, "r") as f:
+        usuarios = json.loads(s=f.read())
+
+    logger.info("Principal: %s", usuarios['principal'])
+    for idx, i in enumerate(iterable=usuarios['usuarios'].keys(), start=1):
+        logger.info("%s: %s", idx, i)
+        for v, k in usuarios['usuarios'][i].items(): # porque son diccionarios
+            if not Path(k).exists():
+                logger.info("[%s] '%s' no fue encontrado. Saliendo...", i , k)
+                exit()
+            logger.info("   %s: '%s'", v, k)

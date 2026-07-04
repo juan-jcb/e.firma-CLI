@@ -6,13 +6,22 @@ from pyhanko.sign.validation.dss import DocumentSecurityStore
 from efcli import core
 
 def leer_firmas_pdf(pdf_input: str | BytesIO) -> list[str]:
-    '''
-    Lee las firmas incrustadas en un archivo pdf, diferenciando por tipo /Sig y /DocTimeStamp.
+    """
+    Lee las firmas incrustadas en un archivo pdf, diferenciando por tipo
+    /Sig y /DocTimeStamp.
 
-    :param pdf_input: `BytesIO` del archivo pdf o `str` de ruta tipo OS hacia el archivo pdf.
-    :return: `list` de `str` con desglose textual simple: ["CN \\<email\\> (Serial) (Tipo)", "..."] de
-    las firmas encontradas en el orden que se realizaron. Lista vacia si no tiene firmas.
-    '''
+    :param pdf_input:
+        `BytesIO` del archivo pdf o `str` de ruta tipo OS hacia el archivo pdf.
+
+    :return:
+        `list` de `str` con desglose textual simple:
+            
+            ["CN \\<email\\> (Serial) (Tipo)", "..."]
+        
+        de las firmas encontradas en el orden que se realizaron. Lista vacia
+        si no tiene firmas.
+    """
+
     # Normalización previa a operar solo con BytesIO
     if isinstance(pdf_input, str):
         try:
@@ -92,15 +101,19 @@ def leer_firmas_pdf(pdf_input: str | BytesIO) -> list[str]:
     return firmas
 
 def extraer_cms_y_vri(stream, indice: int) -> tuple[bytes, str]:
-    '''
-    Extraer contenedor CMS de un PDF (evidentemente ya firmado) en base al orden representado
-    en indices de firmas ya existentes en el propio PDF.
+    """
+    Extraer contenedor CMS de un PDF (evidentemente ya firmado) en base al
+    orden representado en indices de firmas ya existentes en el propio PDF.
 
-    :param stream: Objeto BytesIO del contenido de un PDF ya firmado.
-    :param indice: Índice de la firma a procesar (0, 1, 2, 3, 4 ...)
+    :param stream:
+        Objeto `BytesIO` del contenido de un PDF ya firmado.
     
-    :return: tuple[bytes, str]: (cms_en_bytes, entrada_vri_str)
-    '''
+    :param indice:
+        Índice de la firma a procesar (0, 1, 2, 3, 4 ...)
+    
+    :return:
+        `tuple` con 2 elementos `bytes` y `str`: (cms_en_bytes, entrada_vri_str)
+    """
     firmado_reader = PdfFileReader(stream)
     firmas_incrustadas = firmado_reader.embedded_signatures
     if not firmas_incrustadas:

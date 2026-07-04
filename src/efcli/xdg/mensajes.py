@@ -97,6 +97,62 @@ saber de quién proviene.
 Puede llenar los campos o dejarlos en blanco a criterio.
 """,
 
+    'pefiles_firma': """5. Preferencias para perfil de firma.
+
+Los perfiles (o niveles) de firma definidos en ETSI EN 319 142-1 especifican qué elementos criptográficos
+y de validación debe incorporar una firma PAdES incrustada en un PDF. Definen los requisitos de presencia
+y cardinalidad sobre los campos de firma, atributos y servicios para cuatro niveles de firma baseline:
+
+    - Basic     (B)
+    - Long-Term (L)
+    - Timestamp (T)
+    - Archival  (A)
+
+Los cuales suelen seguir la siguiente estructura progresiva:
+
+    - PAdES-B-B
+    - PAdES-B-L
+    - PAdES-B-LT
+    - PAdES-B-LTA
+    
+El perfil determina directamente hasta cuándo y bajo qué condiciones un validador puede comprobar la validez
+de la firma: cuanto mayor es el nivel, mayor es la resistencia frente a la expiración/revocación de certificados
+y frente a la degradación criptográfica con el paso del tiempo.
+
+De manera muy resumida se entienden los perfiles de firma de la siguiente manera:
+
+    - B: Firma con certificado X.509, opcionalmente cadena de confianza de su PKI y hora del reloj
+         del equipo del firmante.
+
+    - L: Firma con certificado X.509, cadena de confianza completa (sin raíz), evidencia OCSP/CRL
+         proveniente de la PKI del firmante y hora del reloj del equipo del firmante. Permite corroborar
+         que una determinada firma fue realizada mientras el certificado del firmante era válido sin
+         depender a posteriori de la infraestructura de la PKI. Es progresión del perfil B (B -> L).
+
+    - T: Firma con sello de tiempo de TSA incrustado en la propia firma. Es el aspecto que otorga la
+         "fecha cierta" al artefacto de firma situandolo en X momento del tiempo. Es técnicamente una
+         "contrafirma" hecha por una autoridad de sellado de tiempo TSA. Literalmente: "Una TSA firma
+         la firma del firmante, confiando en la TSA como autoridad imparcial para determinar el tiempo".
+         Es complementario de los perfiles anteriores (ej: BT, LT).
+    
+    - A: Sello de tiempo de TSA sobre 1 PDF con N cantidad de evidencias anteriores. Es el mismo
+         tipo de sello de tiempo (TimeStampToken) pero aplicado sobre el PDF JUNTO a cualquier cantidad
+         de evidencias criptográficas pre-existentes (multiples firmas, evidencias de validación, otros
+         TSTs, etc.). Son incrementales. Generalmente ocurren al final de una sesión de firma para sellar
+         temporalmente todas las evidencias. Le da "fecha cierta" tanto al contenido del PDF junto a
+         cualquier otra evidencia u operación hecha sobre este. Es complementario de los perfiles
+         anteriores (ej: BA, LA, BTA, LTA)
+
+e.firma-CLI permite ejercer los 4 perfiles de firma dandole al firmante la libertad de elegir qué
+perfil quiere usar en sus firmas: Solo B, ascender de B a L, añadir T, añadir A en cualquiera de sus
+posibles combinaciones.
+
+Con el fin de no ingresar manualmente el perfil de firma deseado en cada sesión de firma, se definen
+"preferencias sobre el perfil de firma" para que culquier firma posterior efectue ese perfil. Usted
+solo tiene que aceptar o negar las siguientes opciones para establecer su preferencia de firma. De
+igual forma puede modificar sus elecciones posterioremente.
+""",
+
     'bienvenida_corta': """Bienvenido a e.firma CLI!
 
 Una herramienta de terminal que permite operar de manera simplificada en el contexto de la PKI del
