@@ -21,11 +21,12 @@ from efcli.pdf import pdf_utils, integridad_pdfs
 logger = logging.getLogger(__name__)
 
 def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
-    BANXICO_PKI_CTX = pki_ctx
     FIRMANTE = firmante_input['firmante']
     SIG_META = firmante_input['metadatos_firma']
-    CAMPO_VISUAL = firmante_input['firma_visible']
     PERFILES_FIRMA = firmante_input['perfiles_firma']
+    CAMPO_VISUAL = firmante_input['firma_visible']
+    
+    BANXICO_PKI_CTX = pki_ctx
     PERFIL_FIRMA_PROPUESTO = ['B']
 
     TSA = xdg_config.GLOBAL_CONFIG['TSA']
@@ -506,6 +507,8 @@ def firma(pdfs: list, firmante_ctx: dict):
             else:
                 firmas_previas = nextsig_visual - 1
 
+            ES_PDF_CIFRADO = i[2]
+
             print()
             logger.info("Abriendo PDF: '%s'", PDF.name)
 
@@ -516,8 +519,11 @@ def firma(pdfs: list, firmante_ctx: dict):
             logger.info("Su firma se incrustará en posición: %s", nextsig_visual)
 
             with open(PDF, 'rb') as f_in:
-
                 original = IncrementalPdfFileWriter(f_in)
+
+                # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions" que se "libera" con caden vacia
+                if ES_PDF_CIFRADO:
+                    original.encrypt(user_pwd="")
                 try:
                     # TODO:
                     # meter try para continuar o salir por si me banean de la TSA (perfiles 'T', 'A') y se interrumpe la iteración actual
@@ -539,7 +545,11 @@ def firma(pdfs: list, firmante_ctx: dict):
                     # e interactuar cómodamente con /DSS.
                     logger.info("Firmado.")
                     firmado = IncrementalPdfFileWriter(STREAM_AUX)
-                    cms_bytes, vri = pdf_utils.extraer_cms_y_vri(stream=STREAM_AUX, indice=nextsig_interno)
+                    # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions" que se "libera" con caden vacia
+                    if ES_PDF_CIFRADO:
+                        firmado.encrypt(user_pwd="")
+
+                    cms_bytes, vri = pdf_utils.extraer_cms_y_vri(stream=STREAM_AUX, indice=nextsig_interno, usa_cifrado=ES_PDF_CIFRADO)
                     logger.info("VRI de firma %s: %s", nextsig_visual, vri)
 
                     # Retornar TSTInfo desde un CMS firmado en pefil 'T'
@@ -594,7 +604,7 @@ def firma(pdfs: list, firmante_ctx: dict):
                     # Perfil y conteo visual de firmas.
                     logger.info("Firma 'PAdES-B-%s' efectuada correctamente.", ''.join(PERFIL_FIRMA_INDIVIDUAL))
                     
-                    firmas_totales = pdf_utils.leer_firmas_pdf(pdf_input=REV)
+                    firmas_totales = pdf_utils.leer_firmas_pdf(pdf_input=REV, usa_cifrado=ES_PDF_CIFRADO)
                     if firmas_totales:
                         logger.info("========== HISTORIAL DE FIRMAS ==========")
                         for n, j in enumerate(iterable=firmas_totales, start=1):

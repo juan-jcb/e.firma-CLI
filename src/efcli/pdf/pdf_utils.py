@@ -5,7 +5,7 @@ from pyhanko.sign.validation.dss import DocumentSecurityStore
 
 from efcli import core
 
-def leer_firmas_pdf(pdf_input: str | BytesIO) -> list[str]:
+def leer_firmas_pdf(pdf_input: str | BytesIO, usa_cifrado: bool = False) -> list[str]:
     """
     Lee las firmas incrustadas en un archivo pdf, diferenciando por tipo
     /Sig y /DocTimeStamp.
@@ -30,7 +30,12 @@ def leer_firmas_pdf(pdf_input: str | BytesIO) -> list[str]:
         except FileNotFoundError:
             raise ValueError("Archivo no encontrado:", pdf_input)
 
-    pdf = PdfFileReader(pdf_input)
+    pdf_reader = PdfFileReader(pdf_input)
+
+    # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions" que se "libera" con caden vacia
+    if usa_cifrado:
+        pdf_reader.decrypt(password="")
+
     firmas = []
     firmas_etiquetadas = []
     etiquetas = {
@@ -39,9 +44,9 @@ def leer_firmas_pdf(pdf_input: str | BytesIO) -> list[str]:
     }
 
     # listas de objetos: pyhanko.sign.validation.pdf_embedded.EmbeddedPdfSignature
-    total_firmas = pdf.embedded_signatures
-    regulares = pdf.embedded_regular_signatures
-    incrementales = pdf.embedded_timestamp_signatures
+    total_firmas = pdf_reader.embedded_signatures
+    regulares = pdf_reader.embedded_regular_signatures
+    incrementales = pdf_reader.embedded_timestamp_signatures
 
     # Re-etiquetado de las firmas hechas para saber de qué lista provienen. Se entiende "embedded_signatures"
     # como array maestro lineal y "embedded_regular_signatures", "embedded_timestamp_signatures" como particiones.
@@ -100,7 +105,7 @@ def leer_firmas_pdf(pdf_input: str | BytesIO) -> list[str]:
 
     return firmas
 
-def extraer_cms_y_vri(stream, indice: int) -> tuple[bytes, str]:
+def extraer_cms_y_vri(stream, indice: int, usa_cifrado: bool = False) -> tuple[bytes, str]:
     """
     Extraer contenedor CMS de un PDF (evidentemente ya firmado) en base al
     orden representado en indices de firmas ya existentes en el propio PDF.
@@ -115,12 +120,16 @@ def extraer_cms_y_vri(stream, indice: int) -> tuple[bytes, str]:
         `tuple` con 2 elementos `bytes` y `str`: (cms_en_bytes, entrada_vri_str)
     """
     firmado_reader = PdfFileReader(stream)
+    # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions" que se "libera" con caden vacia
+    if usa_cifrado:
+        firmado_reader.decrypt(password="")
+
     firmas_incrustadas = firmado_reader.embedded_signatures
     if not firmas_incrustadas:
         raise ValueError("El PDF no contiene firmas digitales")
     firma_obj = firmas_incrustadas[indice]
-    #cms_bytes = firma_obj.pkcs7_content           # Firma CMS completa (en bytes)
-    cms_bytes = firma_obj.sig_object['/Contents'] # También Firma CMS completa (en bytes) no se pq usan nombres distintos
+    cms_bytes = firma_obj.pkcs7_content           # Firma CMS completa (en bytes)
+    #cms_bytes = firma_obj.sig_object['/Contents'] # También Firma CMS completa (en bytes) (no funciona con pdfs cifrados en owner/permissions)
     vri = DocumentSecurityStore.sig_content_identifier(cms_bytes)
 
     return (cms_bytes, vri)

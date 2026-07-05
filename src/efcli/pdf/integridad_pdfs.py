@@ -18,22 +18,38 @@ from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign import signers, fields
 
+from pyhanko.sign.general import SigningError
+from pyhanko.pdf_utils.misc import PdfStrictReadError
+from pyhanko.pdf_utils.metadata.xmp_xml import XmpXmlProcessingError
+from pyhanko.pdf_utils.crypt.api import PdfKeyNotAvailableError
+
 from efcli.core.wrappers import salida_limpia
 
 logger = logging.getLogger(__name__)
 
-def normalizar_pdf(archivo_obj: Path, pdf_stream: BytesIO) -> Path | None:
+def normalizar_pdf(pdf: Path) -> Path | None:
     # lo crea en el mismo directorio donde existe el anterior y retorna el str de ruta os del nuevo
-    nuevo = Path(f"{archivo_obj.parent}/{archivo_obj.stem}_NORMALIZADO{archivo_obj.suffix}")
+    nuevo = Path(f"{pdf.parent}/{pdf.stem}_NORMALIZADO{pdf.suffix}")
+
+    while True:
+        opcion = input(f"Reparar '{pdf.name}'? (y/n): ")
+        if opcion == 'y' :
+            print('Reparando...')
+            break
+        elif opcion == 'n':
+            print(f"No es posible firmar en este estado. Saliendo...")
+            exit()
+        else:
+            print('Ingrese una opción correcta.')
 
     try:
-        original_normalizado = pike_open(filename_or_stream=pdf_stream)
-        original_normalizado.save(filename_or_stream=nuevo)
+        normalizado = pike_open(filename_or_stream=pdf)
+        normalizado.save(filename_or_stream=nuevo)
     except Exception:
-        logger.error("No pudo normalizarse PDF: %s. Saliendo...", nuevo.name)
-        return None
+        logger.critical("No pudo normalizarse PDF: %s. Saliendo...", nuevo.name)
+        exit()
     else:
-        print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Válido: {nuevo.name}")
+        print(f"Reparado: {nuevo.name}\n")
         return nuevo
 
 @salida_limpia()
@@ -123,8 +139,13 @@ def pre_firma(lista_pdfs: list) -> list | bool:
 
     logger.info("Evaluando la integridad de los PDFs...")
     for i in lista_pdfs:
+        lector = None
+        escritor = None
+        esta_cifrado = False
+        normalizado_stream = None
         dummy_stream = BytesIO()
-
+        indice_pdf = lista_pdfs.index(i)
+        siguiente_firma = 0
         # Desde pre-firma se determina "el siguiente indice disponible" que usará la firma efectiva
         # del firmante real en su sesión de firma.
 
@@ -137,17 +158,55 @@ def pre_firma(lista_pdfs: list) -> list | bool:
         # Si len() retorna 1, hay 1 firma,  el firmante ocupará indice 1 (la firma existente ya ocupa el 0)
         # Si len() retorna 2, hay 2 firmas, el firmante ocupará indice 2 (las firmas existentes ya ocupan 0 y 1)
         # y así sucesivamente.
-        siguiente_firma = 0
 
         with open(f'{i}', 'rb') as f_stream:
-            original = PdfFileReader(f_stream)
-            siguiente_firma = len(original.embedded_signatures)
+            try:
+                lector = PdfFileReader(f_stream)
+            
+            except PdfStrictReadError as e:
+                logger.error("Lectura ERRONEA de PDF: %s (%s)", i.name, e)
+                logger.error("Puede corregir creando un PDF *nuevo* con el contenido visual del original y firmar ese en su lugar.\n")
+                nuevo_path = normalizar_pdf(pdf=i)
+                i = nuevo_path
+                normalizado_stream = open(f'{nuevo_path}', 'rb')
+                lector = PdfFileReader(normalizado_stream)
+                escritor = IncrementalPdfFileWriter(normalizado_stream)
 
-        with open(f'{i}', 'rb') as f_stream:
-            original = IncrementalPdfFileWriter(f_stream)
+            # Dado que mi flujo contempla la lectura de firmas (y por ende parseo /Root -> /AcroForm -> /Fields)
+            # en prefirma; se deberán manejar los casos donde el PDF viene malformado desde un inicio y provoquen
+            # PdfStrictReadError POST-instanciación inicial como PdfFileReader() debido al parseo lazy de pyhanko.
+            # El primer except de PdfStrictReadError gestiona los casos más evidentes de error inicial para
+            # su normalización, el segundo except (éste) gestiona los casos más particulares pero factibles
+            # de malformación del PDF.
+            try:
+                siguiente_firma = len(lector.embedded_signatures)
+            except PdfKeyNotAvailableError as e:                
+                esta_cifrado = True
+                # Salvaje pero de momento temporal, asumimos que entró en este bloque sin errores de carga inicial y está cifrado
+                logger.warning("'%s' está cifrado! (/Encrypt en trailer). Intentando descifrar con cadena vacia...", i.name)
+                lector.decrypt(password="") # vaya nombres raros para hacer lo mismo
+                siguiente_firma = len(lector.embedded_signatures)
+                if not escritor:
+                    escritor = IncrementalPdfFileWriter(f_stream)
+                    escritor.encrypt(user_pwd="") # vaya nombres raros para hacer lo mismo
+
+            except PdfStrictReadError as e:
+                logger.error("PDF MALFORMADO, requiere normalización! (%s)", e)
+                logger.error("Puede corregir creando un PDF *nuevo* con el contenido visual del original y firmar ese en su lugar.\n")
+                nuevo_path = normalizar_pdf(pdf=i)
+                i = nuevo_path
+                normalizado_stream = open(f'{nuevo_path}', 'rb')
+                lector = PdfFileReader(normalizado_stream)
+                escritor = IncrementalPdfFileWriter(normalizado_stream)
+                siguiente_firma = len(lector.embedded_signatures)
+
+            else:
+                if not escritor:
+                    escritor = IncrementalPdfFileWriter(f_stream)
+
             try:
                 signers.sign_pdf(
-                    pdf_out=original,
+                    pdf_out=escritor,
                     output=dummy_stream,
                     signer=dummy_signer,
                     signature_meta=dummy_sig_meta,
@@ -156,41 +215,23 @@ def pre_firma(lista_pdfs: list) -> list | bool:
                     existing_fields_only=False,
                 )
             
-            # Excepts de errores relacionados con PDFs. (SigningError, UnicodeDecodeError)
-            except Exception as e:
-                logger.warning("Invalido: %s (%s)", i.name, e)
+            except (SigningError, UnicodeDecodeError, XmpXmlProcessingError) as e:
+                logger.warning("Firma invalida para: %s (%s)", i.name, e)
                 logger.warning("Puede corregir creando un PDF *nuevo* con el contenido visual del original y firmar ese en su lugar.\n")
+                nuevo_path = normalizar_pdf(pdf=i)
 
-                while True:
-                    opcion = input(f'Reparar {i.name}? (y/n): ')
-                    if opcion == 'y' :
-                        print('Reparando...\n')
-                        break
-                    elif opcion == 'n':
-                        print(f"No es posible firmar en este estado. Saliendo...")
-                        exit()
-                    else:
-                        print('Ingrese una opción correcta.')
+                # Cuando se normalice un PDF con errores se incrustará el archivo nuevo normalizado (objeto Path)
+                # en el índice del archivo que tuvo problemas al pre-firmar; sustituyendolo en su mismo indice
+                # y así retornar una lista consistente con el órden inicial en el que se instanciaron los objetos
+                # Path, objetos Path que apuntarán a archivos reales y válidos para firmar.
+                if nuevo_path in lista_pdfs:
+                    lista_pdfs.pop(lista_pdfs.index(nuevo_path))
 
-                nuevo_path = normalizar_pdf(archivo_obj=i, pdf_stream=f_stream)
-                if nuevo_path == False:
-                    exit()
+                indice_pdf = lista_pdfs.index(i)
+                lista_pdfs[indice_pdf] = (nuevo_path, siguiente_firma, esta_cifrado) # sustituye con tupla: (PDF normalizado, siguiente indice de firma)
 
-                else:
-                    # Cuando se normalice un PDF con errores se incrustará el archivo nuevo normalizado (objeto Path)
-                    # en el índice del archivo que tuvo problemas al pre-firmar; sustituyendolo en su mismo indice
-                    # y así retornar una lista consistente con el órden inicial en el que se instanciaron los objetos
-                    # Path, objetos Path que apuntarán a archivos reales y válidos para firmar.
-
-                    if nuevo_path in lista_pdfs:
-                        lista_pdfs.pop(lista_pdfs.index(nuevo_path))
-
-                    indice = lista_pdfs.index(i)
-                    lista_pdfs[indice] = (nuevo_path, siguiente_firma) # sustituye con tupla: (PDF normalizado, siguiente indice de firma)
-
-            else:
-                indice = lista_pdfs.index(i)
-                lista_pdfs[indice] = (i, siguiente_firma) # sustituye con tupla: (PDF original, siguiente indice de firma)
+            else:                
+                lista_pdfs[indice_pdf] = (i, siguiente_firma, esta_cifrado) # sustituye con tupla: (PDF original, siguiente indice de firma)
 
                 print(f'[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Válido: {i.name}')
 
@@ -208,6 +249,10 @@ def pre_firma(lista_pdfs: list) -> list | bool:
                 # una con PDFs normalizados se intentase 're-firmar' un pdf normalizado existente en la ruta base
                 # (por no haberlo eliminado a mano o movido de directorio) este se popeará de la lista inicial
                 # generada desde ruta base para evitar inconvenientes.
+
+        if normalizado_stream:
+            print('cerrado')
+            normalizado_stream.close()
 
     print(f'\n[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Material para firmar ({len(lista_pdfs)}) listo.')
     print()
