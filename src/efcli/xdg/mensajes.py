@@ -153,6 +153,8 @@ solo tiene que aceptar o negar las siguientes opciones para establecer su prefer
 igual forma puede modificar sus elecciones posterioremente.
 """,
 
+    'preferencias_uso': """CONTINUAAAARR""",
+
     'bienvenida_corta': """Bienvenido a e.firma CLI!
 
 Una herramienta de terminal que permite operar de manera simplificada en el contexto de la PKI del
@@ -320,4 +322,5 @@ mensajes_adduser = {
     'archivos_efirma': """Firma electrónica.""",
     'metadatos_firma': """Metadatos de su firma.""",
     'pefiles_firma': """Preferencias sobre el perfil de sus firmas.""",
+    'preferencias_uso': """Preferencias de uso del programa."""
 }

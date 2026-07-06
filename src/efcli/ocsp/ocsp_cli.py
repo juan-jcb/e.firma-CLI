@@ -82,7 +82,7 @@ def nueva_request(propia: bool = False, cert_file: str = None):
     added_name = ''
 
     if propia:
-        cert_file = usuarios.load_current_user_conf()['firmante']['certificado']
+        cert_file = usuarios.load_principal_conf()['firmante']['certificado']
         added_name = '(USUARIO PRINCIPAL)'
 
     if not isinstance(cert_file, str):

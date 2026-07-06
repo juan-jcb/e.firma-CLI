@@ -657,40 +657,52 @@ def firma(pdfs: list, firmante_ctx: dict):
 
 @wrappers.salida_limpia()
 def hacer_firma():
-    USUARIO_PRINCIPAL = usuarios.load_state_users()['principal']
-    logger.info("Usando configuración por defecto (%s).", USUARIO_PRINCIPAL)
-    xdg_config.load_global()
-    FIRMANTE_INDIVIDUAL = usuarios.load_current_user_conf()
+    try:
+        xdg_config.load_global()
 
-    # 1. Evaluar que el material a firmar sea viable antes de cualquier otra cosa, evidentemente (¬_¬").
-    pdf_ruta_base = Path(xdg_config.GLOBAL_CONFIG['pdf_ruta_base'])
-    lista_pdfs = list(pdf_ruta_base.glob(pattern="*.pdf")) # TODO: normalizar cualquier .pdf que no sea solo en minus.
-    if not lista_pdfs:
-        logger.warning("No hay material para firmar en: '%s' (,,¬﹏¬,,)!", Path(xdg_config.GLOBAL_CONFIG['pdf_ruta_base']).absolute())
-        logger.warning("Añada uno o más documentos .pdf y empiece a firmar!")
-        return False
+        logger.info("Usando configuración por defecto (%s).", usuarios.load_state_users()['principal'])
+        FIRMANTE_INDIVIDUAL = usuarios.load_principal_conf()
 
-    # 1.5 Pre-fima
-    lista_pdfs = integridad_pdfs.pre_firma(lista_pdfs=lista_pdfs)
-    if not lista_pdfs:
-        return False
+        # 1. Carga inicial y prefirma.
+        # Evaluar que el material a firmar sea viable antes de cualquier otra cosa, evidentemente (¬_¬").
+        pdf_ruta_base = Path(xdg_config.GLOBAL_CONFIG['pdf_ruta_base'])
+        pdfs = []
+        for i in ["pdf", "Pdf", "pDf", "pdF", "PDf", "PdF", "pDF", "PDF"]: # funciona pero si algún cabeza dura tiene duplicados con sufijos distintos se incluirían aqui.
+            pdfs += list(pdf_ruta_base.glob(pattern=f"*.{i}"))
+        if not pdfs:
+            logger.warning("No hay material para firmar en: '%s' (,,¬﹏¬,,)!", pdf_ruta_base.absolute())
+            logger.warning("Añada uno o más documentos .pdf y empiece a firmar!")
+            return False
 
-    # 2. Si el material a firmar es viable (independientemente de cuanto sea) se instancia el contexto
-    # PKI en el que operará el firmante, y se definirá el contexto/configuración de firma del firmante.
-    pki_ctx = pki.get_validation_context(
-        trust_roots=xdg_config.GLOBAL_CONFIG['PKI']['trust_roots'],
-        intermediate_cas=xdg_config.GLOBAL_CONFIG['PKI']['intermediate_cas'],
-    )
-    firmante_ctx = contexto(
-        firmante_input=FIRMANTE_INDIVIDUAL,
-        pki_ctx=pki_ctx
-    )
-    if not firmante_ctx:
-        return False
+        pdfs, normalizados = integridad_pdfs.pre_firma(lista_pdfs=pdfs, autoconfirmar=FIRMANTE_INDIVIDUAL["preferencias_uso"]["autoconfirmar_normalizaciones"])
+        if not pdfs:
+            return False
 
-    # 3. Si existe firmante instanciado en su contexto PKI y con contexto de firma; se inicia el
-    # procedimiento de firma real sobre el material.
-    firma(pdfs=lista_pdfs, firmante_ctx=firmante_ctx)
+        # 2. Instanciación de contexto PKI.
+        # Si el material a firmar es viable (independientemente de cuanto sea) se instancia el contexto
+        # PKI en el que operará el firmante, y se definirá el contexto/configuración de firma del firmante.
+        pki_ctx = pki.get_validation_context(
+            trust_roots=xdg_config.GLOBAL_CONFIG['PKI']['trust_roots'],
+            intermediate_cas=xdg_config.GLOBAL_CONFIG['PKI']['intermediate_cas'],
+        )
+        firmante_ctx = contexto(
+            firmante_input=FIRMANTE_INDIVIDUAL,
+            pki_ctx=pki_ctx
+        )
+        if not firmante_ctx:
+            return False
+
+        # 3. Si existe firmante instanciado en su contexto PKI y con contexto de firma; se inicia el
+        # procedimiento de firma real sobre el material.
+        firma(pdfs=pdfs, firmante_ctx=firmante_ctx)
+
+    # cleanup para archivo normalizados estilo trap ... EXIT en bash
+    finally:
+        # de momento los vamos a borrar, estaría bueno meter en preferencias de uso una opcion bool
+        # para dejarlos tras sesión de firma o borrarlos tras sesión de firma.
+        if normalizados:
+            for i in normalizados:
+                i.unlink(missing_ok=True)
 
     # TODO:
     # Se pueden firmar documentos ya firmandos, pero no se pueden solapar los 'field_name' de sigmeta.

@@ -18,7 +18,7 @@ def load_state_users() -> dict:
     with open(STATE_USERS_FILE, "r") as f:
         return json.loads(s=f.read())
 
-def load_current_user_conf() -> dict:
+def load_principal_conf() -> dict:
     '''
     Carga el TOML de configuración del usuario principal (JSON de usuarios -> TOML del principal).
     Las funciones que llaman a ésta ya evaluan entorno externo viable.
@@ -160,7 +160,14 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
     USAR_OCSP    = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar validación OCSP? (y/n): ", pista='Solo letras "y", "n".')
     USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo TST en su contenedor firma? (y/n): ", pista='Solo letras "y", "n".')
     USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo TST en PDF (/DocTimeStamp)? (y/n): ", pista='Solo letras "y", "n".')
-    preferencias_perfil = [f"{i == 'y'}".lower() for i in [USAR_OCSP, USAR_TSA_CMS, USAR_TSA_DSS]] # me parace cutre, pero eh, deja en minisculas un mapeo de booleanos para usar toml
+    perfil_firma = [f"{i == 'y'}".lower() for i in [USAR_OCSP, USAR_TSA_CMS, USAR_TSA_DSS]] # me parace cutre, pero eh, deja en minisculas un mapeo de booleanos para usar toml
+    time.sleep(1)
+    sys.stdout.write("\033[H\033[2J")
+
+    # 6. Preferencias de uso del programa.
+    print(mensajes['preferencias_uso'])
+    AUTOCONFIRMAR_NORMALIZADOS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar confirmación automática en los prompts para normalización de PDFs? (y/n): ", pista='Solo letras "y", "n".')
+    preferencias_uso = [f"{i == 'y'}".lower() for i in [AUTOCONFIRMAR_NORMALIZADOS,]]
 
     # #!. skeleton de usuario (string -> TOML, TOML -> dict)
     SKEL_USER = f'''# Configuración de usuario {NOMBRE_USUARIO}
@@ -178,11 +185,11 @@ contacto = "{CONTACTO}"
     
 [perfiles_firma]
 # validación externa sobre el x509 del firmante con OCSP (Eleva de Perfil B a Pefil L)
-OCSP = {preferencias_perfil[0]}
+OCSP = {perfil_firma[0]}
 # TST en el CMS del firmante (Añade Perfil T)
-TST_CMS = {preferencias_perfil[1]}
+TST_CMS = {perfil_firma[1]}
 # TST en /DocTimeStamp del PDF (Añade Perfil A)
-TST_DSS = {preferencias_perfil[2]}
+TST_DSS = {perfil_firma[2]}
 
 [firma_visible]
 usar = false
@@ -198,6 +205,11 @@ alto = 50
 coords_x = 200
 coords_y = 85
 
+[preferencias_uso]
+autoconfirmar_normalizaciones = {preferencias_uso[0]}
+
+# Consideraciones adicionales.
+# 
 # Según el flujo de operaciones PAdES, la configuración de una TSA para timestamping en DSS NO debería
 # estár en el dirccionario de preferencias, sin embargo un firmante individual, dado que es el único
 # participante tiene poder de desición completo sobre si quiere utilizar TSTs incrementales o no en el
@@ -381,7 +393,7 @@ def reconf_user() -> None:
     
     users = load_state_users()
     principal_config_path = users['usuarios'][users.get('principal')]['config_file']
-    principal = load_current_user_conf()
+    principal = load_principal_conf()
     actualizado = principal.copy()
     opciones = []
 
@@ -403,6 +415,11 @@ def reconf_user() -> None:
     USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo TST en su contenedor firma [{principal["perfiles_firma"]["TST_CMS"]}] (y/n): ", pista='Solo letras "y", "n".')
     USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo TST en PDF (/DocTimeStamp) [{principal["perfiles_firma"]["TST_DSS"]}] (y/n): ", pista='Solo letras "y", "n".')
 
+    # 6. Preferencias de uso del programa.
+    print()
+    logger.info("=== PREFERENCIAS DE USO ===")
+    AUTOCONFIRMAR_NORMALIZADOS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"¿Normalización automática de PDFs? [{principal["preferencias_uso"]["autoconfirmar_normalizaciones"]}] (y/n): ", pista='Solo letras "y", "n".')
+
     # relación semántica hardcodeada, funciona pero me parece cuestionable.
     for i in [("nombre_firma", ID_FIRMA), ("nombre_firmante", NOMBRE_FIRMANTE), ("razon", RAZON), ("lugar", LUGAR), ("contacto", CONTACTO)]:
         # primero evaluar si existen valores reutilizados
@@ -421,6 +438,16 @@ def reconf_user() -> None:
         else: # 'n'
             opciones.append(False)
     actualizado["perfiles_firma"] = {k: opciones[idx] for idx, k in enumerate(principal["perfiles_firma"], 0)}
+    opciones.clear()
+
+    for i in [("autoconfirmar_normalizaciones", AUTOCONFIRMAR_NORMALIZADOS)]:
+        if not i[1]:
+            opciones.append(principal["preferencias_uso"].get(i[0]))
+        elif i[1] == 'y':
+            opciones.append(True)
+        else: # 'n'
+            opciones.append(False)
+    actualizado["preferencias_uso"] = {k: opciones[idx] for idx, k in enumerate(principal["preferencias_uso"], 0)}
     opciones.clear() # no es necesario pero solo por estetica visual
 
     toml_actualizado = tomli_w.dumps(actualizado)
