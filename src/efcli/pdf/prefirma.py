@@ -1,5 +1,5 @@
 import logging
-from io import BytesIO
+from io import BytesIO, BufferedReader
 from pathlib import Path
 from colorama import Fore
 
@@ -20,7 +20,7 @@ from efcli.core.wrappers import salida_limpia
 
 logger = logging.getLogger(__name__)
 
-def normalizar_pdf(pdf: Path, autoconfirmar: bool) -> Path | None:
+def normalizar_pdf(pdf: Path, autoconfirmar: bool) -> tuple[Path, BufferedReader, PdfFileReader, IncrementalPdfFileWriter] | None:
     """
     Normaliza un PDF malformado o con errores de lectura (prompt interactivo).
     Crea un nuevo archivo PDF en base al original en su misma ruta con un sufijo
@@ -30,8 +30,11 @@ def normalizar_pdf(pdf: Path, autoconfirmar: bool) -> Path | None:
         `Path` del PDF a normalizar.
 
     :return:
-        `Path` del PDF nuevo normalizado con el sufijo extendido "_NORMALIZADO"
-        en la misma ruta de `pdf`. 
+        `tuple` con 4 elementos:
+            idx 0: `Path` del PDF nuevo normalizado con el sufijo extendido "_NORMALIZADO" en la misma ruta de `pdf`. 
+            idx 1: `BufferedReader` ABIERTO del PDF nuevo normalizado (debe cerrarse explicitamente cuando ya no se requiera)
+            idx 2: `PdfFileReader` del PDF normalizado.
+            idx 3: `IncrementalPdfFileWriter` del PDF normalizado.
     """
     if not autoconfirmar:
         logger.warning("Puede corregir creando un PDF *nuevo* con el contenido visual del original y firmar ese en su lugar.\n")
@@ -59,7 +62,6 @@ def normalizar_pdf(pdf: Path, autoconfirmar: bool) -> Path | None:
         normalizado_stream = open(f'{normalizado_path}', 'rb')
         normalizado_lector = PdfFileReader(normalizado_stream)
         normalizado_escritor = IncrementalPdfFileWriter(normalizado_stream)
-
         return (normalizado_path, normalizado_stream, normalizado_lector, normalizado_escritor)
 
 @salida_limpia()
@@ -89,12 +91,12 @@ def prefirmar(lista_pdfs: list, autoconfirmar: bool) -> tuple[list, list] | bool
     :return:
         `tuple` con 2 elementos:
 
-        indice 0: `list` con 3 elementos:
-            indice 0: objeto `Path` (normalizado o no) del .pdf a firmar.
-            indice 1: `int` incativo de "la siguiente firma" que será incrustada en PDF
-            indice 2: `bool` incativo de uso de cifrado en el PDF procesado.
+        idx 0: `list` con 3 elementos:
+            idx 0: objeto `Path` (normalizado o no) del .pdf a firmar.
+            idx 1: `int` incativo de "la siguiente firma" que será incrustada en PDF
+            idx 2: `bool` incativo de uso de cifrado en el PDF procesado.
 
-        indice 1: `list` con todos los PDFs normalizados (si los hay), puede ser también
+        idx 1: `list` con todos los PDFs normalizados (si los hay), puede ser también
         lista vacia.
     """
     logger.info("Evaluando la integridad de los PDFs...\n")
@@ -139,7 +141,14 @@ def prefirmar(lista_pdfs: list, autoconfirmar: bool) -> tuple[list, list] | bool
                     ELIMINADOS.append(i)
                     lista_pdfs.pop(idx_pdf_actual)
                     continue
-                
+
+                    # TODO: Es factible que existan PDFs reales con cabecera "ilegal", los cuales; parsers permisivos
+                    # podrán leer, pero ésta evaluación explicita contra el header los descarte como: "No es un PDF".
+                    # Yo prefiero seguir el parseo estricto de pyhanko para calificar dichos casos como "no validos",
+                    # aunque puedan ser técnicamente legibles y normalizables. Quedará a criterio que tan quisquilloso
+                    # se quiera ser sobre la validación de cada PDF ya que este escenario se puede dar en alguna que
+                    # otra ocasión.
+
                 print()
                 logger.warning("Lectura inicial INCONSISTENTE: %s (%s)", i.name, e)
                 normalizado_path, normalizado_stream, lector, escritor = normalizar_pdf(pdf=i, autoconfirmar=autoconfirmar)
@@ -203,7 +212,8 @@ def prefirmar(lista_pdfs: list, autoconfirmar: bool) -> tuple[list, list] | bool
                         existing_fields_only=False,
                     )
                 except Exception as e:
-                    print("error en firma puntual (post intento) %s", e)
+                    logger.critical("Error en firma post-normalización. (%s)", e)
+                    print("Saliendo...")
                     exit()
                 else:
                     i = normalizado_path                
