@@ -13,10 +13,10 @@ from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.pdf_utils.reader import PdfFileReader
 
 from efcli import config
-from efcli.core import wrappers, registros, archivos, pki, x509, pkey
+from efcli.core import core_utils, wrappers, registros, pki, x509, pkey
 from efcli.xdg import xdg_config, usuarios
 from efcli.ocsp import fetcher, ocsp_utils
-from efcli.pdf import pdf_utils, integridad_pdfs
+from efcli.pdf import pdf_utils, prefirma
 
 logger = logging.getLogger(__name__)
 
@@ -612,11 +612,11 @@ def firma(pdfs: list, firmante_ctx: dict):
                         logger.info("========== HISTORIAL DE FIRMAS ==========")
 
                     # Guardado de archivos de cada iteración.
-                    archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'p7s', **{f"{PDF.stem}_CMS":cms_bytes})
+                    core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'p7s', **{f"{PDF.name}_CMS":cms_bytes})
                     if TST_CMS:
-                        archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'der', **{f"{PDF.stem}_TST-Firmante":TST_CMS})
+                        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'der', **{f"{PDF.name}_TST-Firmante":TST_CMS})
                     if TST_DSS:
-                        archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'der', **{f"{PDF.stem}_TST-PDF":TST_DSS})
+                        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'der', **{f"{PDF.name}_TST-PDF":TST_DSS})
 
                     logger.info("Cerrando PDF: '%s'", PDF.name)
                     with open(NOMBRE_PDF_FIRMADO, 'wb') as f_out:
@@ -628,20 +628,20 @@ def firma(pdfs: list, firmante_ctx: dict):
             f.write(config.MENSAJES_MISC['disclaimer_firmas_separadas'])
 
     if FIRMANTE_CA_CHAIN:
-        archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/firmante_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=FIRMANTE_CA_CHAIN).encode('utf-8'))
-        archivos.guardar_archivos(
+        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/firmante_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=FIRMANTE_CA_CHAIN).encode('utf-8'))
+        core_utils.guardar_archivos(
             f'{DIR_SESION_FIRMA}/firmante_info', 'pem',
             firmante_x509=pem.armor(der_bytes=FIRMANTE.signer.signing_cert.dump(), type_name="CERTIFICATE"),
             firmante_cadena=pki.hacer_cadena_pem(chain_path=FIRMANTE_CA_CHAIN, elementos="no_subject")
         )
 
     if OCSP_INFO:
-        archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'der', status_ocsp=ocsp_raw_response)
-        archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'txt', status_ocsp_textual=parsed_response[1].encode('utf-8'))
-        archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'pem', responder_x509=pem.armor(der_bytes=responder_x509.dump(), type_name="CERTIFICATE"))
+        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'der', status_ocsp=ocsp_raw_response)
+        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'txt', status_ocsp_textual=parsed_response[1].encode('utf-8'))
+        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'pem', responder_x509=pem.armor(der_bytes=responder_x509.dump(), type_name="CERTIFICATE"))
         if OCSP_CA_CHAIN:
-            archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=OCSP_CA_CHAIN).encode('utf-8'))
-            archivos.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'pem', responder_cadena=pki.hacer_cadena_pem(chain_path=OCSP_CA_CHAIN, elementos="no_subject"))
+            core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=OCSP_CA_CHAIN).encode('utf-8'))
+            core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'pem', responder_cadena=pki.hacer_cadena_pem(chain_path=OCSP_CA_CHAIN, elementos="no_subject"))
             # no es necesario usar .decode() para las cadenas puesto que el resultado a escribir ya son ascii bytes en estructura PEM
 
     # Resumen de sesión.
@@ -651,7 +651,7 @@ def firma(pdfs: list, firmante_ctx: dict):
     print(f"   • Duración: {end_time}s")
     print(f"   • Total de Firmas: {len(PDFs)}")
     print(f"   • Fecha: {datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")} (UTC)")
-    print(f"   • Ruta Archivos: '{Path(DIR_SESION_FIRMA).absolute()}'")
+    print(f"   • Ruta Archivos: '{Path(DIR_SESION_FIRMA).absolute()}'", end="")
 
     return True
 
@@ -667,6 +667,7 @@ def hacer_firma():
         # Evaluar que el material a firmar sea viable antes de cualquier otra cosa, evidentemente (¬_¬").
         pdf_ruta_base = Path(xdg_config.GLOBAL_CONFIG['pdf_ruta_base'])
         pdfs = []
+        normalizados = None
         for i in ["pdf", "Pdf", "pDf", "pdF", "PDf", "PdF", "pDF", "PDF"]: # funciona pero si algún cabeza dura tiene duplicados con sufijos distintos se incluirían aqui.
             pdfs += list(pdf_ruta_base.glob(pattern=f"*.{i}"))
         if not pdfs:
@@ -674,7 +675,7 @@ def hacer_firma():
             logger.warning("Añada uno o más documentos .pdf y empiece a firmar!")
             return False
 
-        pdfs, normalizados = integridad_pdfs.pre_firma(lista_pdfs=pdfs, autoconfirmar=FIRMANTE_INDIVIDUAL["preferencias_uso"]["autoconfirmar_normalizaciones"])
+        pdfs, normalizados = prefirma.prefirmar(lista_pdfs=pdfs, autoconfirmar=FIRMANTE_INDIVIDUAL["preferencias_uso"]["autoconfirmar_normalizaciones"])
         if not pdfs:
             return False
 
@@ -696,13 +697,19 @@ def hacer_firma():
         # procedimiento de firma real sobre el material.
         firma(pdfs=pdfs, firmante_ctx=firmante_ctx)
 
-    # cleanup para archivo normalizados estilo trap ... EXIT en bash
+    # cleanup para archivos normalizados estilo trap ... EXIT en bash
     finally:
         # de momento los vamos a borrar, estaría bueno meter en preferencias de uso una opcion bool
         # para dejarlos tras sesión de firma o borrarlos tras sesión de firma.
         if normalizados:
+            print(end="\n\n")
+            logger.info("Limpiando archivos normalizados...")
             for i in normalizados:
                 i.unlink(missing_ok=True)
+        elif normalizados == None:
+            pass
+        else:
+            print()
 
     # TODO:
     # Se pueden firmar documentos ya firmandos, pero no se pueden solapar los 'field_name' de sigmeta.

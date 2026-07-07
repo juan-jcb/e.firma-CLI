@@ -2,6 +2,8 @@ import logging
 from pathlib import Path
 from cryptography.x509 import ocsp as crypto_ocsp
 
+from efcli.core import core_utils
+
 from . import fetcher, ocsp_utils
 
 logger = logging.getLogger(__name__)
@@ -72,7 +74,7 @@ def nueva_request(propia: bool = False, cert_file: str = None):
     import time
     from colorama import Fore
 
-    from efcli.core import pki, x509, archivos
+    from efcli.core import pki, x509
     from efcli.xdg import xdg_config, usuarios
 
     xdg_config.load_global()
@@ -137,8 +139,8 @@ def nueva_request(propia: bool = False, cert_file: str = None):
         logger.warning("El endopint respondió, pero NO con una respuesta estándar 'successful (0x0)'")
         print(f"\n{pr[1]}\n")
 
-    archivos.guardar_archivos(".", "der", **archivo_binario)
-    archivos.guardar_archivos(".", "txt", **archivo_plano)
+    core_utils.guardar_archivos(".", "der", **archivo_binario)
+    core_utils.guardar_archivos(".", "txt", **archivo_plano)
     logger.info("Reviselo en los archivos.")
     logger.info("'%s.der'", nombre)
     logger.info("'%s.txt'", nombre)
