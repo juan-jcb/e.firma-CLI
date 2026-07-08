@@ -13,7 +13,7 @@ from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign.general import SigningError
 from pyhanko.pdf_utils.misc import PdfReadError, PdfStrictReadError
 from pyhanko.pdf_utils.metadata.xmp_xml import XmpXmlProcessingError
-from pyhanko.pdf_utils.crypt.api import PdfKeyNotAvailableError
+#from pyhanko.pdf_utils.crypt.api import PdfKeyNotAvailableError # seguro que aparece en algún momento.
 
 from efcli.core.core_utils import get_dummy_signer
 from efcli.core.wrappers import salida_limpia
@@ -25,13 +25,13 @@ def normalizar_pdf(pdf: Path, autoconfirmar: bool) -> tuple[Path, BufferedReader
     Normaliza un PDF malformado o con errores de lectura (prompt interactivo).
     Crea un nuevo archivo PDF en base al original en su misma ruta con un sufijo
     diferenciador.
-    
+
     :param pdf:
         `Path` del PDF a normalizar.
 
     :return:
         `tuple` con 4 elementos:
-            idx 0: `Path` del PDF nuevo normalizado con el sufijo extendido "_NORMALIZADO" en la misma ruta de `pdf`. 
+            idx 0: `Path` del PDF nuevo normalizado con el sufijo extendido "_NORMALIZADO" en la misma ruta de `pdf`.
             idx 1: `BufferedReader` ABIERTO del PDF nuevo normalizado (debe cerrarse explicitamente cuando ya no se requiera)
             idx 2: `PdfFileReader` del PDF normalizado.
             idx 3: `IncrementalPdfFileWriter` del PDF normalizado.
@@ -70,7 +70,7 @@ def prefirmar(lista_pdfs: list, autoconfirmar: bool) -> tuple[list, list] | bool
     Función de comprobación sobre la viabilidad de firma en el/los PDFs originales.
     Se realiza una firma básica 'PAdES-B-B' en memoria instanciando a un firmante
     genérico.
-    
+
     Esta función tiene como finalidad comprobar la integridad de el/los PDFs originales
     y determinar si son aptos para procesarse con pyhanko previo a las firmas reales
     que sí se almacenan.
@@ -93,19 +93,19 @@ def prefirmar(lista_pdfs: list, autoconfirmar: bool) -> tuple[list, list] | bool
 
         idx 0: `list` con 3 elementos:
             idx 0: objeto `Path` (normalizado o no) del .pdf a firmar.
-            idx 1: `int` incativo de "la siguiente firma" que será incrustada en PDF
-            idx 2: `bool` incativo de uso de cifrado en el PDF procesado.
+            idx 1: `bool` indicativo de uso de cifrado en el PDF procesado.
+            idx 2: `int` incativo de "la siguiente firma" que será incrustada en PDF
 
         idx 1: `list` con todos los PDFs normalizados (si los hay), puede ser también
         lista vacia.
     """
-    logger.info("Evaluando la integridad de los PDFs...\n")
     DUMMY_SIGNER = get_dummy_signer()
     L_PROPUESTOS: int = len(lista_pdfs)
     NORMALIZADOS = []
     ELIMINADOS = []
     PARA_ITERAR = lista_pdfs.copy() # dado que lista_pdfs es mutada durante iteración se requiere una copia no mutable
 
+    logger.info("Evaluando integridad de los PDFs propuestos (%s)...\n", L_PROPUESTOS)
     # Desde pre-firma se determina "el siguiente indice disponible" que usará la firma efectiva
     # del firmante real en su sesión de firma.
 
@@ -165,7 +165,7 @@ def prefirmar(lista_pdfs: list, autoconfirmar: bool) -> tuple[list, list] | bool
                     if not escritor:
                         escritor = IncrementalPdfFileWriter(f_stream)
                         escritor.encrypt(user_pwd="") # vaya nombres raros para hacer lo mismo
-            
+
             except PdfReadError as e:
                 logger.warning("PDF cifrado SIN referencia indirecta: '%s' (%s)", i.name, e)
                 normalizado_path, normalizado_stream, lector, escritor = normalizar_pdf(pdf=i, autoconfirmar=autoconfirmar)
@@ -216,7 +216,7 @@ def prefirmar(lista_pdfs: list, autoconfirmar: bool) -> tuple[list, list] | bool
                     print("Saliendo...")
                     exit()
                 else:
-                    i = normalizado_path                
+                    i = normalizado_path
 
             finally:
                 if (normalizado_path and normalizado_stream):
@@ -232,7 +232,7 @@ def prefirmar(lista_pdfs: list, autoconfirmar: bool) -> tuple[list, list] | bool
                         esta_cifrado = False
 
                 print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Válido: '{i.name}'")
-                lista_pdfs[idx_pdf_actual] = (i, siguiente_firma, esta_cifrado)
+                lista_pdfs[idx_pdf_actual] = (i, esta_cifrado, siguiente_firma)
                 # Cuando se normalice un PDF con errores se incrustará el archivo nuevo normalizado (objeto Path)
                 # en el índice del archivo que tuvo problemas al pre-firmar; sustituyendolo en su mismo indice
                 # y así retornar una lista consistente con el órden inicial en el que se instanciaron los objetos

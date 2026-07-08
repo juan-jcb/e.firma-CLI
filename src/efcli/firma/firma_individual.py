@@ -1,11 +1,11 @@
 import logging, getpass
 from io import BytesIO
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep, time
 from datetime import datetime, timezone
 from colorama import Fore
 
-from asn1crypto import pem, x509 as asn1_x509
+from asn1crypto import pem
 from pyhanko.sign import signers, fields, timestamps
 from pyhanko.sign.validation.dss import DocumentSecurityStore
 from pyhanko_certvalidator import ValidationContext
@@ -25,7 +25,7 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
     SIG_META = firmante_input['metadatos_firma']
     PERFILES_FIRMA = firmante_input['perfiles_firma']
     CAMPO_VISUAL = firmante_input['firma_visible']
-    
+
     BANXICO_PKI_CTX = pki_ctx
     PERFIL_FIRMA_PROPUESTO = ['B']
 
@@ -33,10 +33,10 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
 
     logger.info("Definiendo al firmante.")
     print("    1. Cargando contexto PKI del firmante...")
-    
+
     cert, cert_encode = x509.cargar_cert_asn1(cert=FIRMANTE['certificado'])
     print(f"     • Certificado ({cert_encode}) cargado.")
-    
+
     try:
         # En caso de que metan una CA intermedia nueva no se afecta este código (supuestamente ;-;)
         # dejando como unica acción necesaria la adición explicita del x509 nuevo en docs de PKI.
@@ -133,7 +133,7 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
         PERFIL_FIRMA_PROPUESTO[0] = 'L'
     else:
         print('     • NO se utilizará OCSP para validar su certificado X.509.')
-    
+
     # TST en CMS (perfil 'T')
     if PERFILES_FIRMA['TST_CMS'] == True:
         try:
@@ -175,7 +175,7 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
             campo_visual = fields.SigFieldSpec(
                 sig_field_name=SIG_META['nombre_firma'],
                 on_page=CAMPO_VISUAL['pagina'],
-                
+
                 box=(
                     CAMPO_VISUAL['coords_x'],
                     CAMPO_VISUAL['coords_y'],
@@ -210,25 +210,14 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
     logger.info("Perfil de firma propuesto: PAdES-B-%s", ''.join(PERFIL_FIRMA_PROPUESTO))
     #print(f'\n• Documentos a firmar: {PDFs}')
     #print(pki.leer_ca_chain_simple(chain_path=CA_CHAIN_SUBJECT))
-    
+
     if PERFILES_FIRMA['OCSP'] == True:
         print(f"\n{config.MENSAJES_MISC['msj_desfase_temporal']}")
-    
-    print()
-    while True:
-        opcion = input('¿Proceder y firmar? (y/n): ')
-        if opcion == 'y':
-            print('Continuando...')
-            break
-        elif opcion == 'n':
-            print('Saliendo...')
-            return False
-        else:
-            print('Ingrese una opción correcta.')
 
+    core_utils.continuar_salir(msj='\n¿Proceder y firmar? (y/n): ')
     firmante_ctx = {
         'contexto_pki': BANXICO_PKI_CTX,
-        
+
         'firmante': firmante_pdf,
         'firmante_ca_chain': SUBJECT_CA_CHAIN,
 
@@ -241,6 +230,191 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
 
     return firmante_ctx
 
+def manejador_ocsp(firmante_crt, firmante_issuer_crt, endpoints: list, pki_ctx, dir_save):
+    OCSP_INFO = None
+    OCSP_REQUEST = ocsp_utils.coinstruir_OCSPRequest(cert_client=firmante_crt, cert_issuer=firmante_issuer_crt)
+    OCSP_RESPONSE = None
+    OCSP_RAW_RESPONSE = None
+    OCSP_PARSED_RESPONSE = None
+    OCSP_RESPONDER_X509 = None
+    OCSP_CA_CHAIN = None
+
+    OCSP_RESPONSES = None
+    OCSP_X509_DSS = []
+    PERFIL_OCSP = []
+
+    # iteración sobre todos los endpoints disponibles para hacer la petición.
+    for endpoint in endpoints:
+        logger.info("Consultando endpoint: %s", endpoint)
+        OCSP_RESPONSE = fetcher.fetch(ocsp_request=OCSP_REQUEST, endpoint=endpoint)
+        if not OCSP_RESPONSE:
+            print()
+            continue
+
+        logger.info("Respuesta obtenida.")
+        OCSP_RAW_RESPONSE = OCSP_RESPONSE.dump()
+        es_good, OCSP_PARSED_RESPONSE = ocsp_utils.parse_response(der_bytes=OCSP_RAW_RESPONSE)
+
+        # cert status good, lo que realmente nos interesa, sale directamente.
+        if es_good:
+            tiempo_resp = int(time())
+            estado = OCSP_RESPONSE['response_bytes']['response'].parsed['tbs_response_data']['responses'][0]['cert_status']
+            break
+
+        # Sí hay respuesta, pero no es operativamente útil (cualquiera entre 0x1-0x6).
+        logger.warning("Excepción en el código de respuesta!")
+        logger.warning("El endpoint OCSP respondíó, pero NO con material útil para usar como respuesta OCSP para una firma funcional.")
+        print(f"\n{OCSP_PARSED_RESPONSE}\n")
+        logger.error("No es posible continuar en éste estado y preservar el perfil de firma 'L'.")
+        logger.error("Tiene 2 opciones:")
+        logger.error("  1. Continuar firma pero SIN validación OCSP externa; el perfil de firma se mantendrá en 'Basic (B)'.")
+        logger.error("  2. Cancelar el proceso, esperar a que se regularice el estado del responder y volver a intentar.")
+        core_utils.continuar_salir(msj='\n¿Continuar con el proceso de firma? (y/n): ')
+
+    # post iteración de endpoints
+
+    # 0. se recorrieron todos los endpoints y salió naturalemnte del bucle sin haberse obtenido respuesta.
+    if not OCSP_RESPONSE:
+        logger.error("Han fallado todos los servidores OCSP. Esto AFECTA DIRECTAMENTE al perfil de validación 'Long-Term (L)'.")
+        logger.error("Tiene 2 opciones:")
+        logger.error("  1. Continuar firma pero SIN validación OCSP externa; el perfil de firma se mantendrá en 'Basic (B)'.")
+        logger.error("  2. Cancelar el proceso, esperar un par de minutos a que se regularice el estado del responder y volver a intentar.")
+        core_utils.continuar_salir(msj='\n¿Continuar con el proceso de firma? (y/n): ') # sale del if, elif, elif, else y cae en el bucle de firmado.
+
+    # 1. hay respuesta, con status good
+    elif (OCSP_RESPONSE and estado.name == "good"):
+        logger.info("Certificado X.509 válido en PKI (Cert Status: %s).", estado.name)
+        OCSP_RESPONSES = [OCSP_RESPONSE] # /OCSPs de /DSS recibe una "lista de objetos respuesta" (no objetos respuesta solos).
+
+        # Recuperación del certificado x509 del responder desde su respuesta para su inclusión en /Certs de /DSS.
+        logger.info("(Si existiese) Recuperando x509 del responder...")
+        OCSP_RESPONDER_X509 = ocsp_utils.extraer_x509_responder(der_bytes=OCSP_RAW_RESPONSE)
+
+        # la práctica correcta es incluir el x509 del responder en /Certs de /DSS, independientemente de si su
+        # certificado ya está incluído en su respuesta OCSP (y por ende en lo que será /OCSPs). La duplicidad de
+        # datos no viola ninguna norma y garantiza que el documento sea validable sin conexión ahora y en el
+        # futuro. A grandes razgos se entiende lo siguiente:
+        #
+        #   /DSS
+        #   ├── /Certs
+        #   │   ├── Certificado del firmante
+        #   │   ├── N cantidad CAs intermedias
+        #   │   ├── CA raíz (tecnicamente posible pero no recomendado: la raíz se asume en el validador)
+        #   │   └── Certificado del OCSP Responder (si existe incluír siempre, aunque ya esté en la respuesta OCSP)
+        #   │
+        #   ├── /OCSPs
+        #   │   └── BasicOCSPResponse (puede o no contener el x509 del responder)
+        #   │
+        #   └── /CRLs
+        #       └── (si aplicase)
+        #
+        # - Una firma PAdES-LT/LTA exige que la cadena de validación sea autocontenida. El validador no debe
+        #   necesitar conexión a internet para reconstruirla.
+        # - El estándar ETSI EN 319 102-1 §5.5 indica que todos los certificados necesarios para validar los
+        #   materiales de revocación deben estar presentes en /Certs.
+        # - Los validadores (DSS de la Comisión Europea) buscan certificados en /Certs directamente y no todos
+        #   implementan extracción desde la respuesta OCSP.
+        #
+        #   Respuesta OCSP en /OCSPs
+        #   └── BasicOCSPResponse
+        #       └── certs[]   ← certificado del responder (opcional según RFC 6960)
+        #
+        #   /Certs            ← debe incluirse el x509 del responder aquí.
+        #
+        # Referencias normativas.
+        #
+        #   RFC 6960 – Online Certificate Status Protocol (OCSP)
+        #   ETSI EN 319 102-1 – Procedures for Creation and Validation of AdES Digital Signatures
+        #   ETSI EN 319 122-1 – CAdES (la base de PAdES)
+        #   ISO 32000-2 – PDF 2.0, estructura del diccionario DSS
+
+        if OCSP_RESPONDER_X509:
+            OCSP_INFO = True
+            logger.info('Responder incluyó su x509 en la respuesta: "%s" ', x509.leer_subject_simple(cert=OCSP_RESPONDER_X509))
+            logger.info("Se adjuntará también como contexto en /Certs de /DSS).")
+            OCSP_X509_DSS.append(OCSP_RESPONDER_X509)
+
+            # Si existe x509 del responder se buscará construír su cadena completa en este contexto PKI y se añadirán
+            # los certificados de sus CAs intermedias (según aplique) en /Certs de /DSS en el orden antes propuesto:
+            # responder, issuer, issuer, ... (sin raíz)
+            logger.info("Reconstruyendo cadena de confianza del responder...")
+            try:
+                OCSP_CA_CHAIN = [i for i in pki.get_ca_chain(cert=OCSP_RESPONDER_X509, tipo='ocsp_responder', pki_ctx=pki_ctx)]
+                #ocsp_root_x509      = OCSP_CA_CHAIN[0]
+                #ocsp_inters_x509    = OCSP_CA_CHAIN[-3:0:-1]
+                ocsp_issuer_x509    = OCSP_CA_CHAIN[-2]
+                ocsp_responder_x509 = OCSP_CA_CHAIN[-1]
+
+                # TODO: Aquí no es ncesario desglosar con 'if OCSP_INTERS:' ???
+
+            except Exception as e:
+                logger.warning("No se pudo cargar la cadena de certificados del responder. Continuando sin ellos... (%s)", e)
+            else:
+                logger.info("Cadena del responder OCSP cargada.")
+                # Una vez con la cadena completa del responder se debe evaluar si existe duplicado de Isusers (que el
+                # issuer del responder sea el mismo del firmante) dado que es la topología esperada en la mayoría de
+                # casos, y afortunadamente banxico sí lo hace de forma estándar y define los x509 de responder y los
+                # FIEL/SELLO al mismo nivel jerarquico en su PKI (ambos como end-entities).
+                #
+                # En caso de ser mismo issuer se añadirá solo 1 x509 a /CERTS:      [end, end_issuer, ocsp]
+                # Si son issuers diferentes se añade N cantidad en orden normal:    [end, end_issuer, ocsp, ocsp_issuer, ...]
+
+                if ocsp_issuer_x509.dump() == firmante_issuer_crt.dump():
+                    logger.info("Firmante y responder comparten MISMO Issuer.")
+                    logger.info("Se mantendrá el mismo x509 de issuer en /Certs de /DSS (valída para ambos firmante y responder).")
+                else:
+                    logger.warning("Firmante y responder tienen DISTINTO Issuer.")
+                    logger.info("Se incluirán los x509 de cada issuer en /Certs como contexto de validación.")
+                    OCSP_X509_DSS.append(ocsp_issuer_x509)
+
+                    # TODO:
+                    # Solo se está incluyendo el issuer del responder pero no un factible "N cantidad de intermedias"
+
+                PERFIL_OCSP.append('L')
+                logger.info("Perfil 'Long-Term (L)' completo. (validación externa)")
+
+        else:
+            logger.warning("NO hay certificados x509 incluidos en la respuesta del responder. Continuado sin el...")
+
+    # 2. hay respuesta, con status revoked
+    elif (OCSP_RESPONSE and estado.name == "revoked"):
+        # con certs expirados el responder del SAT marca "revoked" e incluye fecha revocación.
+        print()
+        logger.error("Certificado X.509 REVOCADO.")
+        logger.error("Revocado desde: %s (UTC)", estado.chosen['revocation_time'].native.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        logger.error("(opcional) Razón: %s", estado.chosen['revocation_reason'].native)
+        logger.error("DEBE regularizar su estado con su CA emisora.")
+        print()
+        logger.warning("ATENCIÓN!, es técnicamente posible continuar con la firma pero bajo su propio criterio.")
+        logger.warning("Tiene 2 opciones:")
+        logger.warning("  1. Firmar en estado revocado, lo cual SERÁ VISIBLE en todas sus firmas, y se mantendrá el perfil en 'Basic (B)'.")
+        logger.warning("  2. Cancelar el proceso e intentar firmar nuevamente una vez haya regularizado su situación con su CA emisora.")
+        core_utils.continuar_salir(msj='\n¿Continuar con el proceso de firma? (y/n): ')
+
+        # TODO:
+        # Bajo el flujo normal de uso de efcli, se entra a este bloque unicamente cuando el certificado
+        # del firmante ha sido revocado en su PKI, no cuando el certificado está expirado directamente
+        # por fecha por la validación que hace pyhanko para construir las cadenas de validación exceptua.
+        # certificados expirados por fecha.
+        # ¿Debería ignorar la restricción (hecha en local) de expiración de certificado al construir su
+        # cadena de validación para que deliberadamente se puedan enviar peticiones ocsp de certificados
+        # ya expirados y en ambos resultados (revocado y expirado) y se unifiquen los flujos aquí?. No es
+        # técnicamente necesario, pero podría hacerse.
+
+    # 3. hay respuesta, con status unknown. TODO: desarrollar
+    else:
+        pass
+
+    if OCSP_INFO:
+        core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{tiempo_resp}', 'der', status_ocsp=OCSP_RAW_RESPONSE)
+        core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{tiempo_resp}', 'txt', status_ocsp_textual=OCSP_PARSED_RESPONSE.encode('utf-8'))
+        core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{tiempo_resp}', 'pem', responder_x509=pem.armor(der_bytes=ocsp_responder_x509.dump(), type_name="CERTIFICATE"))
+        if OCSP_CA_CHAIN:
+            core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{tiempo_resp}', 'pem', responder_cadena=pki.hacer_cadena_pem(chain_path=OCSP_CA_CHAIN, elementos="no_subject"))
+            core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{tiempo_resp}', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=OCSP_CA_CHAIN).encode('utf-8'))
+
+    return (PERFIL_OCSP, OCSP_RESPONSES, OCSP_X509_DSS)
+
 def firma(pdfs: list, firmante_ctx: dict):
     '''
     Firmar digitalmente un PDF. Firmante Individual.
@@ -249,28 +423,28 @@ def firma(pdfs: list, firmante_ctx: dict):
     USUARIO_PRINCIPAL = usuarios.load_state_users()['principal']
     RUTA_BASE = xdg_config.GLOBAL_CONFIG['pdf_ruta_base']
     DIR_SESION_FIRMA = Path(f'{RUTA_BASE}/({USUARIO_PRINCIPAL}) Sesión de Firma - {datetime.now().strftime("%a %b %d %I:%M:%S %p %Y")}')
-    DIR_SESION_FIRMA.mkdir(parents=True)
-    PDFs = pdfs
-
-    FIRMANTE = firmante_ctx['firmante']
-    FIRMANTE_CA_CHAIN = firmante_ctx['firmante_ca_chain']
-    PERFIL_FIRMA = ['B']
 
     BANXICO_PKI_CTX = firmante_ctx['contexto_pki']
+    FIRMANTE = firmante_ctx['firmante']
+    FIRMANTE_CA_CHAIN = firmante_ctx['firmante_ca_chain']
+    PERFIL_FIRMA_INICIAL = ['B']
+
     USAR_OCSP = firmante_ctx['perfiles_firma']['OCSP']
     OCSP_URIS = xdg_config.GLOBAL_CONFIG['OCSP']['endpoints']
     OCSP_RESPONSES = None
-    OCSP_INFO = None
+    TIMER_OCSP = False
 
-    DSS_TIMESTAMPER_HASH = firmante_ctx['tst_dss_hash']
-    DSS_TIMESTAMPER = firmante_ctx['tst_dss_timestamper']    
     TST_CMS = None
     TST_DSS = None
+    DSS_TIMESTAMPER = firmante_ctx['tst_dss_timestamper']
+    DSS_TIMESTAMP_HASH = firmante_ctx['tst_dss_hash']
+
+    PDFs = pdfs
+    l_pdfs = len(PDFs)
 
     # /Certs de /DSS
     # El llenado de objetos certificado de la lista DSS_CERTS se prefiere en órden: [end, inter, inter, ...] SIN RAÍZ
     # para estár en conformidad con "ETSI EN 319 102-1 y 319 122-1 PAdES"
-
     # - Se empieza a llenar por el certificado del firmante y hasta N cantidad de sus CAs intermedias desde su
     #   atributo cert_registry.
     # - Posteriormente en caso de utilizar validación OCSP e incluir certificados x509 del responder, el orden
@@ -282,235 +456,90 @@ def firma(pdfs: list, firmante_ctx: dict):
 
     print()
     logger.info("Iniciando sesión de firma.")
+    DIR_SESION_FIRMA.mkdir(parents=True)
+    core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/firmante_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=FIRMANTE_CA_CHAIN).encode('utf-8'))
+    core_utils.guardar_archivos(
+        f'{DIR_SESION_FIRMA}/firmante_info', 'pem',
+        firmante_x509=pem.armor(der_bytes=FIRMANTE.signer.signing_cert.dump(), type_name="CERTIFICATE"),
+        firmante_cadena=pki.hacer_cadena_pem(chain_path=FIRMANTE_CA_CHAIN, elementos="no_subject")
+    )
     ini_time = perf_counter()
-    with registros.modded_logs(target_logger=logger, fmt="[%(levelname)s] (%(asctime)s) %(message)s"):
 
+    with registros.modded_logs(target_logger=logger, fmt="[%(levelname)s] (%(asctime)s) %(message)s"):
         if USAR_OCSP == True:
             print()
             logger.info("Iniciando validación externa mediante 'Online Certificate Status Protocol (OCSP)'.")
-            ocsp_request = ocsp_utils.coinstruir_OCSPRequest(cert_client=DSS_CERTS[0], cert_issuer=DSS_CERTS[1])
-            # Siempre que el llenado sea constante en DSS_CERTS el indice 0 y el 1 corresponden a firmante y su issuer.
+            perfil_ocsp, OCSP_RESPONSES, ocsp_x509_dss = manejador_ocsp(
+                firmante_crt=DSS_CERTS[0],
+                firmante_issuer_crt=DSS_CERTS[1],
+                endpoints=OCSP_URIS,
+                pki_ctx=BANXICO_PKI_CTX,
+                dir_save=DIR_SESION_FIRMA
+            )
+            if ocsp_x509_dss:
+                DSS_CERTS += ocsp_x509_dss
+            if perfil_ocsp:
+                PERFIL_FIRMA_INICIAL[0] = perfil_ocsp[0]
 
-            # No me termina de agradar esta estructura
-            for endpoint in OCSP_URIS:
-                logger.info("Consultando endpoint: %s", endpoint)
-                ocsp_response = fetcher.fetch(ocsp_request=ocsp_request, endpoint=endpoint)
-                if ocsp_response:
-                    logger.info("Respuesta obtenida.")
-                    ocsp_raw_response = ocsp_response.dump()
-                    
-                    # Si sí hay respuesta (cargada como objeto respuesta) pero no es una operativamente válida (cualquiera entre 0x1-0x6)
-                    # se gestiona tal que...
-                    parsed_response = ocsp_utils.parse_response(der_bytes=ocsp_raw_response)
-                    if parsed_response[0] == False:
-                        logger.warning("Excepción del código de respuesta!")
-                        logger.warning("El endpoint respondíó, pero NO con material útil para usar como respuesta OCSP en una firma.")
-                        print(f"\n{parsed_response[1]}\n")
-                        logger.error("No es posible continuar en este estado y preservar el perfil de firma 'L'.")
-                        logger.error("Tiene 2 opciones:")
-                        logger.error("  1. Continuar firma pero SIN validación OCSP externa; el perfil de firma se mantendrá en 'Basic (B)'.")
-                        logger.error("  2. Cancelar el proceso, esperar a que se regularice el estado del responder y volver a intentar.")
-                        while True:
-                            opcion = input('\n¿Continuar con el proceso de firma? (y/n): ')
-                            if 'y' in opcion:
-                                print("Continuando...")
-                                break
-                            elif 'n' in opcion:
-                                DIR_SESION_FIRMA.rmdir()
-                                print("Saliendo...")
-                                return False
-                            else:
-                                print('Ingrese una opción correcta.')
-                    
+            # Por más pocho que sea el hardware 150 firmas en perfil alto no sobrepasan los 5 minutos, sería a partir
+            # de 150 pdfs a firmar que empezariamos a usar la comparación por tiempo en cada iteración de firma para
+            # evaluar si el tiempo transcurrido bajo perfil L sobrepasa 255 segundos (casi 5min) y así realizar una
+            # nueva petición OCSP y continuar firmando bajo la misma lógica ordenada.
+            if l_pdfs > 150:
+                TIMER_OCSP = True
+                techo_ocsp = 295
+                ocsp_time = perf_counter()
+
+        # Bucle de firma sobre los PDFs.
+        for i in PDFs: # tuplas de 3 elementos: ("Path del PDF", "bool de cifrado", "int de siguiente firma disponible").
+            if TIMER_OCSP:
+                # si se firman menos de 150 pdfs: if false, no baja rendimiento.
+                # si se firman más de 150 pdfs: if true, se compara tiempo en cada iteración para gestionar a mano el nextUpdate.
+                if (perf_counter() - ocsp_time) > techo_ocsp:
+                    print()
+                    PERFIL_FIRMA_INICIAL = ['B']
+                    logger.warning("ATENCIÓN!, Se ha sobrepasado el techo práctico de tiempo para seguir usando la misma respuesta OCSP.")
+                    logger.warning("Se realizará una NUEVA petición OCSP a los endpoints por defecto para corroborar nuevamente el estado del firmante.\n")
+                    sleep(3)
+
+                    logger.info("Iniciando nuevamente validación externa mediante 'Online Certificate Status Protocol (OCSP)'.")
+                    perfil_ocsp, OCSP_RESPONSES, ocsp_x509_dss = manejador_ocsp(
+                        firmante_crt=DSS_CERTS[0],
+                        firmante_issuer_crt=DSS_CERTS[1],
+                        endpoints=OCSP_URIS,
+                        pki_ctx=BANXICO_PKI_CTX,
+                        dir_save=DIR_SESION_FIRMA
+                    )
+                    if ocsp_x509_dss:
+                        DSS_CERTS = [FIRMANTE.signer.signing_cert] # basicamente popeamos lo anterior (N cantidad de certs sobre el anterior responder)
+                        for j in FIRMANTE.signer.cert_registry.certs.values():
+                            DSS_CERTS.append(j)
+                        DSS_CERTS += ocsp_x509_dss
+                    if perfil_ocsp:
+                        PERFIL_FIRMA_INICIAL[0] = perfil_ocsp[0]
+                        techo_ocsp += 298
                     else:
-                        estado = ocsp_response['response_bytes']['response'].parsed['tbs_response_data']['responses'][0]['cert_status']
-                        break
-                else:
+                        TIMER_OCSP = False
                     print()
 
-            # Si se recorren todos los endpoints y se sale naturalemnte del bucle sin haber respuesta.
-            if not ocsp_response:
-                logger.error("Han fallado todos los servidores OCSP. Esto AFECTA DIRECTAMENTE al perfil de validación 'Long-Term (L)'.")
-                logger.error("Tiene 2 opciones:")
-                logger.error("  1. Continuar firma pero SIN validación OCSP externa; el perfil de firma se mantendrá en 'Basic (B)'.")
-                logger.error("  2. Cancelar el proceso, esperar un par de minutos a que se regularice el estado del responder y volver a intentar.")
-                while True:
-                    opcion = input('\n¿Continuar con el proceso de firma? (y/n): ')
-                    if 'y' in opcion:
-                        print("Continuando...")
-                        break
-                    elif 'n' in opcion:
-                        DIR_SESION_FIRMA.rmdir()
-                        print("Saliendo...")
-                        return False
-                    else:
-                        print('Ingrese una opción correcta.')
-
-            elif ocsp_response and estado.name == "good":
-                logger.info("Certificado X.509 válido en PKI (Cert Status: %s).", estado.name)
-                # TODO:
-                # Aunque se almacene la respuesta OCSP antes del bucle de firmado y se use el mismo objeto respuesta en
-                # todas las firmas (emulando una suerte de cacheado), se debería agregar lógica para manejo del limite
-                # temporal de la respuesta recibida si es que se excede el techo práctico para usar la misma respuesta
-                # en todas las firmas (nextUpdate o 5min).
-                # No es algo muy común que digamos porque las firmas ocurren en intervalos menores al minuto incluso en
-                # perfiles altos con latencia extra, pero sigue siendo un caso posible a considerar en el supuesto de
-                # que se realicen +50 firmas de con perfiles 'TA' en la misma sesisón.
-
-                # /OCSPs de /DSS recibe 'lista de objetos respuesta', no objetos respuesta solos.
-                OCSP_RESPONSES = [ocsp_response] 
-
-                # Recuperación del certificado x509 del responder desde su respuesta.
-                logger.info("(Si existiese) Recuperando x509 del responder...")
-                responder_x509 = ocsp_utils.extraer_x509_responder(raw_response=ocsp_raw_response)
-
-                if isinstance(responder_x509, asn1_x509.Certificate):
-                    logger.info('Responder incluyó su x509 en la respuesta: "%s" ', x509.leer_subject_simple(cert=responder_x509))
-                    logger.info("Se adjuntará también como contexto en /Certs de /DSS).")
-
-                    OCSP_INFO = True
-                    DSS_CERTS.append(responder_x509)
-
-                    # Si existe x509 del responder se buscará construír su cadena completa en este contexto PKI y se añadirán
-                    # los certificados de sus CAs intermedias (según aplique) en /Certs de /DSS en el orden antes propuesto:
-                    # responder, issuer, issuer, ... (sin raíz)
-                    logger.info("Reconstruyendo cadena de confianza del responder...")
-                    try:
-                        OCSP_CA_CHAIN = [i for i in pki.get_ca_chain(cert=responder_x509, tipo='ocsp_responder', pki_ctx=BANXICO_PKI_CTX)]
-
-                        #X509_OCSP_ROOT      = OCSP_CA_CHAIN[0]
-                        OCSP_INTERS         = OCSP_CA_CHAIN[-3:0:-1]
-                        X509_OCSP_ISSUER    = OCSP_CA_CHAIN[-2]
-                        #X509_OCSP_RESPONDER = OCSP_CA_CHAIN[-1]
-
-                        # TODO: Aquí no es ncesario desglosar con 'if OCSP_INTERS:' ???
-
-                    except Exception:
-                        logger.warning("No se pudo cargar la cadena de certificados del responder. Continuando sin ellos...")
-
-                    else:
-                        logger.info("Cadena del responder OCSP cargada.")
-
-                        # Una vez con la cadena completa del responder se debe evaluar si existe duplicado de Isusers (que el
-                        # issuer del responder sea el mismo del firmante) dado que es la topología esperada en la mayoría de
-                        # casos, y afortunadamente banxico sí lo hace de forma estándar y define los x509 de responder y los
-                        # FIEL/SELLO al mismo nivel jerarquico en su PKI (ambos como end-entities).
-                        # 
-                        # En caso de ser mismo issuer se añade solo 1 x509 a /CERTS:        [end, end_issuer, ocsp]
-                        # Si son issuers diferentes se añade N cantidad en orden normal:    [end, end_issuer, ocsp, ocsp_issuer]
-
-                        if X509_OCSP_ISSUER.dump() == DSS_CERTS[1].dump():
-                            logger.info("Firmante y responder comparten MISMO Issuer.")
-                            logger.info("Se incluirá el mismo x509 de issuer en /Certs (valida para ambos, evita duplicados).")
-                        else:
-                            logger.warning("Firmante y responder tienen DISTINTO Issuer.")
-                            logger.info("Se incluirán los x509 de cada issuer en /Certs como contexto de validación.")
-                            DSS_CERTS.append(X509_OCSP_ISSUER)
-
-                            # TODO:
-                            # Solo se está incluyendo el issuer del responder pero no un factible "N cantidad de intermedias"
-
-                            # la práctica correcta es incluir en /Certs el x509 del responder, independientemente de si este
-                            # ya está incluído en la respuesta OCSP y por ende en /OCSPs. La duplicidad de datos no viola
-                            # ninguna norma y garantiza que el documento sea validable sin conexión ahora y en el futuro.
-
-                            # - Una firma PAdES-LT/LTA exige que la cadena de validación sea autocontenida. El validador
-                            #   no debe necesitar conexión a internet para reconstruirla.
-                            # - El estándar ETSI EN 319 102-1 §5.5 indica que todos los certificados necesarios para
-                            #   validar los materiales de revocación deben estar presentes en /Certs.
-                            # - Los validadores (DSS de la Comisión Europea) buscan certificados en /Certs directamente;
-                            #   no todos implementan extracción desde la respuesta OCSP.
-
-                            # Respuesta OCSP en /OCSPs
-                            # └── BasicOCSPResponse
-                            #     └── certs[]   ← certificado del responder (opcional, RFC 6960)
-                            # 
-                            # /Certs            ← debe incluirse también explícitamente
-
-                            # En general se entiende la estructura:
-                            #
-                            # /DSS
-                            # ├── /Certs
-                            # │   ├── Certificado del firmante
-                            # │   ├── CA intermedia(s)
-                            # │   ├── CA raíz (opcional pero recomendado)
-                            # │   └── Certificado del OCSP Responder        ← Incluír siempre aunque ya esté en la respuesta OCSP
-                            # │
-                            # ├── /OCSPs
-                            # │   └── BasicOCSPResponse que puede o no contener internamente el x509 del responder
-                            # │
-                            # └── /CRLs
-                            #     └── (si aplicase)
-
-                            # Referencias normativas.
-                            # 
-                            # RFC 6960 – Online Certificate Status Protocol (OCSP)
-                            # ETSI EN 319 102-1 – Procedures for Creation and Validation of AdES Digital Signatures
-                            # ETSI EN 319 122-1 – CAdES (la base de PAdES)
-                            # ISO 32000-2 – PDF 2.0, estructura del diccionario DSS
-
-                        PERFIL_FIRMA[0] = 'L'
-                        logger.info("Perfil 'Long-Term (L)' completo. (validación externa)")
-
-                else:
-                    logger.warning("NO hay certificados x509 incluidos en la respuesta del responder. Continuado sin el...")
-            
-            elif ocsp_response and estado.name == "revoked":
-                # Aunque certs estén expirados el responder marca "revoked" e incluye data de revocación extra que no viene en "good"
-                
-                # TODO:
-                # Se entra a este bloque unicamente cuando el certificado del firmante no ha expirado pero si ha
-                # sido revocado en su PKI, no entra cuando el certificado está expirado directamente por fecha.
-                # ¿Debería ignorar la restricción (hecha en local) de expiración de certificado al construir su
-                # cadena de validación para que deliberadamente se puedan enviar peticiones ocsp de certificados
-                # ya expirados y en ambos resultados (revocado y expirado) y se unifiquen los flujos aquí?
-
-                print()
-                logger.error("Certificado X.509 REVOCADO.")
-                logger.error("Revocado desde: %s (UTC)", estado.chosen['revocation_time'].native.strftime("%Y-%m-%dT%H:%M:%SZ"))
-                logger.error("(opcional) Razón: %s", estado.chosen['revocation_reason'].native)
-                logger.error("DEBE regularizar su estado con su CA emisora.")
-                print()
-                logger.warning("Es técnicamente posible continuar con la firma pero bajo su propio criterio.")
-                logger.warning("Tiene 2 opciones:")
-                logger.warning("  1. Firmar en estado revocado, lo cual será *VISIBLE* en todas sus firmas y mantendrá el perfil en 'Basic (B)'.")
-                logger.warning("  2. Cancelar el proceso e intentar nuevamente una vez haya regularizado su situación.")
-                while True:
-                    opcion = input('\n¿Continuar con el proceso de firma? (y/n): ')
-                    if 'y' in opcion:
-                        print("Continuando...")
-                        break
-                    elif 'n' in opcion:
-                        DIR_SESION_FIRMA.rmdir()
-                        print("Saliendo...")
-                        return False
-                    else:
-                        print('Ingrese una opción correcta.')
-            
-            else:
-                pass
-                # TODO: hacer para casos UNKNWOUN pass
-
-        # Firma en bucle sobre los PDFs. Todos los iteradores son tuplas: (objeto "Path del PDF", int "siguiente indice disponible").
-        for i in PDFs:
-            PDF = i[0]
-            NOMBRE_PDF_FIRMADO = f"{DIR_SESION_FIRMA}/{PDF.stem}_FIRMADO{PDF.suffix}"
-            PERFIL_FIRMA_INDIVIDUAL = PERFIL_FIRMA
-            STREAM_AUX = BytesIO()
-            REV = BytesIO()
+            pdf = i[0]
+            es_pdf_cifrado = i[1]
 
             # Manejo diferenciado entre indice de lista e indice mostrado en terminal
-            nextsig_interno = i[1]
-            nextsig_visual = i[1] + 1
+            nextsig_interno = i[2]
+            nextsig_visual = i[2] + 1
             if nextsig_interno == 0:
                 firmas_previas = 0
             else:
                 firmas_previas = nextsig_visual - 1
 
-            ES_PDF_CIFRADO = i[2]
+            nombre_pdf_firmado = f"{DIR_SESION_FIRMA}/{pdf.stem}_FIRMADO{pdf.suffix}"
+            perfil_firma_individual = PERFIL_FIRMA_INICIAL
+            stream_aux = BytesIO()
+            rev = BytesIO()
 
             print()
-            logger.info("Abriendo PDF: '%s'", PDF.name)
+            logger.info("Abriendo PDF: '%s'", pdf.name)
 
             if firmas_previas > 0:
                 logger.info("El PDF posee firmas previas: %s", firmas_previas)
@@ -518,11 +547,11 @@ def firma(pdfs: list, firmante_ctx: dict):
                 logger.info("El PDF no posee ninguna firma previa.")
             logger.info("Su firma se incrustará en posición: %s", nextsig_visual)
 
-            with open(PDF, 'rb') as f_in:
+            with open(pdf, 'rb') as f_in:
                 original = IncrementalPdfFileWriter(f_in)
 
                 # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions" que se "libera" con caden vacia
-                if ES_PDF_CIFRADO:
+                if es_pdf_cifrado:
                     original.encrypt(user_pwd="")
                 try:
                     # TODO:
@@ -531,12 +560,12 @@ def firma(pdfs: list, firmante_ctx: dict):
                     logger.info("Firmando...")
                     FIRMANTE.sign_pdf(
                         pdf_out=original,
-                        output=STREAM_AUX,
+                        output=stream_aux,
                         existing_fields_only=False,
                     )
 
                 except Exception as e:
-                    logger.warning('Error al firmar PDF "%s": %s', i, e)
+                    logger.warning('Error al firmar PDF "%s": %s', pdf.name, e)
                     return False
 
                 else:
@@ -544,12 +573,12 @@ def firma(pdfs: list, firmante_ctx: dict):
                     # los bytes del CMS de la firma apenas hecha, obtener su 'Validation Related Information (VRI)'
                     # e interactuar cómodamente con /DSS.
                     logger.info("Firmado.")
-                    firmado = IncrementalPdfFileWriter(STREAM_AUX)
+                    firmado = IncrementalPdfFileWriter(stream_aux)
                     # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions" que se "libera" con caden vacia
-                    if ES_PDF_CIFRADO:
+                    if es_pdf_cifrado:
                         firmado.encrypt(user_pwd="")
 
-                    cms_bytes, vri = pdf_utils.extraer_cms_y_vri(stream=STREAM_AUX, indice=nextsig_interno, usa_cifrado=ES_PDF_CIFRADO)
+                    cms_bytes, vri = pdf_utils.extraer_cms_y_vri(stream=stream_aux, indice=nextsig_interno, usa_cifrado=es_pdf_cifrado)
                     logger.info("VRI de firma %s: %s", nextsig_visual, vri)
 
                     # Retornar TSTInfo desde un CMS firmado en pefil 'T'
@@ -558,7 +587,7 @@ def firma(pdfs: list, firmante_ctx: dict):
                     # signer= y contrafirma= dado que esa es la posición esperada del TSTInfo en su CMS.
                     if FIRMANTE.default_timestamper:
                         TST_CMS = pkey.extraer_tst_signer(cms=cms_bytes, signer=0, contrafirma=0)
-                        PERFIL_FIRMA_INDIVIDUAL.append('T')
+                        perfil_firma_individual.append('T')
                         logger.info("Perfil 'Timestamp (T)' completo. (TST en CMS)")
 
                     # Contexto DSS post-firma.
@@ -578,22 +607,22 @@ def firma(pdfs: list, firmante_ctx: dict):
                         logger.info("Añadiendo TST en '/DocTimeStamp'...")
                         DSS_TIMESTAMPER.timestamp_pdf(
                             pdf_out=firmado,    # 'IncrementalPdfFileWriter'
-                            output=REV,         # '_io.BytesIO'
-                            md_algorithm=DSS_TIMESTAMPER_HASH,
+                            output=rev,         # '_io.BytesIO'
+                            md_algorithm=DSS_TIMESTAMP_HASH,
                         )
 
                         # parece salvaje pero para cada sesión de firma la última firma hecha siempre es el TST de
                         # /DocTimeStamp. Y dado que este TST no es un CMS anidado como contrafirma, se retornará tal
-                        # cual lo almacena pyhanko en el PDF (con cero padding al final como en el CMS del firmante).
-                        TST_DSS = PdfFileReader(REV).embedded_timestamp_signatures[-1].pkcs7_content
+                        # cual lo almacena pyhanko en el PDF (con su cero-padding al final como en el CMS del firmante).
+                        TST_DSS = PdfFileReader(rev).embedded_timestamp_signatures[-1].pkcs7_content
 
                         logger.info("Perfil 'Archival (A)' completo (TST incremental en /DocTimeStamp).")
-                        PERFIL_FIRMA_INDIVIDUAL.append('A')
+                        perfil_firma_individual.append('A')
 
                     else:
-                        firmado.write(REV)
+                        firmado.write(rev)
 
-                        # 'REV' se entiende como la revisión final del PDF, lo que se escribe a archivo final.
+                        # 'rev' se entiende como la revisión final del PDF, lo que se escribe a archivo final.
                         # si hay TST en DSS, el método ".timestamp_pdf()" internamente hace la escritura a REV para
                         # incluír el TST (CMS de la TSA) en /DocTimeStamp.
                         # Si no; se escribe a REV desde el método ".write()" de los 'IncrementalPdfFileWriter' desde
@@ -602,9 +631,9 @@ def firma(pdfs: list, firmante_ctx: dict):
                         # historial de firmas antes de cerrar y pasarlo a bytes para escribirlo en archivo final.
 
                     # Perfil y conteo visual de firmas.
-                    logger.info("Firma 'PAdES-B-%s' efectuada correctamente.", ''.join(PERFIL_FIRMA_INDIVIDUAL))
-                    
-                    firmas_totales = pdf_utils.leer_firmas_pdf(pdf_input=REV, usa_cifrado=ES_PDF_CIFRADO)
+                    logger.info("Firma 'PAdES-B-%s' efectuada correctamente.", ''.join(perfil_firma_individual))
+
+                    firmas_totales = pdf_utils.leer_firmas_pdf(pdf_input=rev, usa_cifrado=es_pdf_cifrado)
                     if firmas_totales:
                         logger.info("========== HISTORIAL DE FIRMAS ==========")
                         for n, j in enumerate(iterable=firmas_totales, start=1):
@@ -612,39 +641,21 @@ def firma(pdfs: list, firmante_ctx: dict):
                         logger.info("========== HISTORIAL DE FIRMAS ==========")
 
                     # Guardado de archivos de cada iteración.
-                    core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'p7s', **{f"{PDF.name}_CMS":cms_bytes})
+                    core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'p7s', **{f"{pdf.name}_CMS":cms_bytes})
                     if TST_CMS:
-                        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'der', **{f"{PDF.name}_TST-Firmante":TST_CMS})
+                        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'der', **{f"{pdf.name}_TST-Firmante":TST_CMS})
                     if TST_DSS:
-                        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'der', **{f"{PDF.name}_TST-PDF":TST_DSS})
+                        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'der', **{f"{pdf.name}_TST-PDF":TST_DSS})
 
-                    logger.info("Cerrando PDF: '%s'", PDF.name)
-                    with open(NOMBRE_PDF_FIRMADO, 'wb') as f_out:
-                        f_out.write(REV.getvalue())
+                    logger.info("Cerrando PDF: '%s'", pdf.name)
+                    with open(nombre_pdf_firmado, 'wb') as f_out:
+                        f_out.write(rev.getvalue())
 
-    # Wrap up: almacenado de archivos relevantes para calidad de vida.
+    # Wrap up y resumen de sesión.
     if Path(f'{DIR_SESION_FIRMA}/(complemento) archivos separados').is_dir():
         with open(f'{DIR_SESION_FIRMA}/(complemento) archivos separados/0disclaimer.txt', 'w') as f:
             f.write(config.MENSAJES_MISC['disclaimer_firmas_separadas'])
 
-    if FIRMANTE_CA_CHAIN:
-        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/firmante_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=FIRMANTE_CA_CHAIN).encode('utf-8'))
-        core_utils.guardar_archivos(
-            f'{DIR_SESION_FIRMA}/firmante_info', 'pem',
-            firmante_x509=pem.armor(der_bytes=FIRMANTE.signer.signing_cert.dump(), type_name="CERTIFICATE"),
-            firmante_cadena=pki.hacer_cadena_pem(chain_path=FIRMANTE_CA_CHAIN, elementos="no_subject")
-        )
-
-    if OCSP_INFO:
-        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'der', status_ocsp=ocsp_raw_response)
-        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'txt', status_ocsp_textual=parsed_response[1].encode('utf-8'))
-        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'pem', responder_x509=pem.armor(der_bytes=responder_x509.dump(), type_name="CERTIFICATE"))
-        if OCSP_CA_CHAIN:
-            core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=OCSP_CA_CHAIN).encode('utf-8'))
-            core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/ocsp_info', 'pem', responder_cadena=pki.hacer_cadena_pem(chain_path=OCSP_CA_CHAIN, elementos="no_subject"))
-            # no es necesario usar .decode() para las cadenas puesto que el resultado a escribir ya son ascii bytes en estructura PEM
-
-    # Resumen de sesión.
     end_time = f"{(perf_counter() - ini_time):.3f}"
     print()
     print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Sesión de firma finalizada.")
@@ -652,7 +663,6 @@ def firma(pdfs: list, firmante_ctx: dict):
     print(f"   • Total de Firmas: {len(PDFs)}")
     print(f"   • Fecha: {datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")} (UTC)")
     print(f"   • Ruta Archivos: '{Path(DIR_SESION_FIRMA).absolute()}'", end="")
-
     return True
 
 @wrappers.salida_limpia()
@@ -668,13 +678,18 @@ def hacer_firma():
         pdf_ruta_base = Path(xdg_config.GLOBAL_CONFIG['pdf_ruta_base'])
         pdfs = []
         normalizados = None
-        for i in ["pdf", "Pdf", "pDf", "pdF", "PDf", "PdF", "pDF", "PDF"]: # funciona pero si algún cabeza dura tiene duplicados con sufijos distintos se incluirían aqui.
-            pdfs += list(pdf_ruta_base.glob(pattern=f"*.{i}"))
+
+        # se toma todo archivo, se filtra por extensión .pdf (cualquier variante) se calculan y suman por lógica
+        # de append las potenciales excepciones que puedan ocurrir por nombre de archivo. De cualquier modo en
+        # prefirma se evalua por bytes de header si en efecto son PDFs reales o no y se descartan en consecuencia.
+        archivos = [i for i in pdf_ruta_base.iterdir() if i.is_file()] # se recorre el directorio solo 1 vez
+        pdfs = [i for i in archivos if i.suffix.lower() == ".pdf"]
+        potencial_excepcion = [i for i in archivos if i.suffix.lower() != ".pdf" and i.name.lower().endswith("pdf")]
+        pdfs += potencial_excepcion
         if not pdfs:
             logger.warning("No hay material para firmar en: '%s' (,,¬﹏¬,,)!", pdf_ruta_base.absolute())
             logger.warning("Añada uno o más documentos .pdf y empiece a firmar!")
             return False
-
         pdfs, normalizados = prefirma.prefirmar(lista_pdfs=pdfs, autoconfirmar=FIRMANTE_INDIVIDUAL["preferencias_uso"]["autoconfirmar_normalizaciones"])
         if not pdfs:
             return False

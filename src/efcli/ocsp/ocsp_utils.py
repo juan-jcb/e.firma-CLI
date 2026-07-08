@@ -30,7 +30,7 @@ def parse_response(der_bytes: bytes) -> tuple[bool, str]:
 
     :return:
         :class:`tuple` con 2 elementos.
-        
+
         Indice 0: :class:`bool` de flag indicativo de si la respuesta
         parseada es válida, True para "successful (0x0)", False para
         cualquiera 0x1 - 0x6.
@@ -113,15 +113,16 @@ def parse_response(der_bytes: bytes) -> tuple[bool, str]:
 
     return (True, "\n".join(lines))
 
-def extraer_x509_responder(raw_response: bytes) -> asn1_x509.Certificate | None:
-    rsp = crypto_ocsp.load_der_ocsp_response(raw_response)
+def extraer_x509_responder(der_bytes: bytes) -> asn1_x509.Certificate | None:
+    """
+    Retorna el `asn1crypto.x509.Certificate` incluido en una
+    respuesta OCSP, o `None` en caso de no haberlo.
+    """
+    rsp = crypto_ocsp.load_der_ocsp_response(data=der_bytes)
     responder_certs = rsp.certificates
     if not responder_certs:
         return None
 
-    # Se debe normalizar también el x509 del responder (;_;)
-    else:
-        # asumiendo que solo el indice 0 es el que se necesita
-        responder_x509_bytes = responder_certs[0].public_bytes(Encoding.DER)
-        crt = asn1_x509.Certificate.load(responder_x509_bytes)
-        return crt
+    responder_x509_bytes = responder_certs[0].public_bytes(encoding=Encoding.DER) # asumiendo que solo el indice 0 es el que se necesita
+    crt = asn1_x509.Certificate.load(responder_x509_bytes)
+    return crt

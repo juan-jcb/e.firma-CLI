@@ -10,6 +10,22 @@ from cryptography.hazmat.primitives import serialization, hashes
 
 from pyhanko.sign import signers, fields
 
+def continuar_salir(msj: str):
+    """
+    Prompt mínimo de confirmación para continuación o salida
+    del programa.
+    """
+    while True:
+        opcion = input(msj)
+        if (opcion == 'y') or (opcion == ''):
+            print("Continuando...")
+            break
+        elif opcion == 'n':
+            print("Saliendo...")
+            exit()
+        else:
+            print('Ingrese una opción correcta.')
+
 def guardar_archivos(*args, **kwargs) -> None:
     """
     Función generalizada para almacenar archivos en X ruta
@@ -18,12 +34,12 @@ def guardar_archivos(*args, **kwargs) -> None:
     La lógica de ruta, extensión y número de archivos se
     determina según la organización de los argumentos en
     la llamada.
-    
+
     :param args:
         Indice 0: :class:`str` de ruta en sistema. Si ruta no
         existe se crean directorios intermedios, si ya existe
         se usa ese sin sobreescribir.
-        
+
         Indice 1: :class:`str` para extensión de archivo (sin `.`)
 
     :param kwargs:
@@ -32,7 +48,7 @@ def guardar_archivos(*args, **kwargs) -> None:
     """
     ruta = Path(args[0])
     ext = args[1]
-    
+
     if not ruta.is_dir():
         ruta.mkdir(parents=True)
     for i, j in kwargs.items():
