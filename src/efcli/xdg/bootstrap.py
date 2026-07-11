@@ -120,6 +120,7 @@ def reset_env() -> None:
         except Exception as e:
             logger.error("%s", e)
 
+    print()
     logger.info("Entorno externo borrado completamente. (inicie uno nuevamente con 'efcli init')")
 
 @wrappers.salida_limpia()

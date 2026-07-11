@@ -87,14 +87,15 @@ relevantes su dueño, especificamente en el 'Subject:' y en los campos:
     - CN=, name=, O=            (contiene su nombre completo)
     - serialNumber=             (contiene su CURP)
     - x500UniqueIdentifier=     (contiene su RFC)
-    - emailAddress=             (contiene el correo que uso en el trámite)
+    - emailAddress=             (contiene el correo que uso en el trámite de emisión)
 
 Cualquier firma PAdES incluye el certificado x509 del firmante (además de
 los metadatos), por lo que aunque no los incluya, si se firma mediante PAdES,
 cualquiera que valide la firma podrá leer los campos de su certificado para
 saber de quién proviene.
 
-Puede llenar los campos o dejarlos en blanco a criterio.
+Puede llenar los campos o dejarlos en blanco a criterio, de igual forma esta
+herramienta le permitirá cambiarlos más adelante si así lo desea.
 """,
 
     'pefiles_firma': """5. Preferencias para perfil de firma.

@@ -28,8 +28,8 @@ def parse_response(der_bytes: bytes) -> tuple[bool, str]:
         bytes en DER de la respuesta OCSP (se asumen bytes de una
         respuesta estructuralmente parseable).
 
-    :return:
-        :class:`tuple` con 2 elementos.
+    :return tuple:
+        con 2 elementos.
 
         Indice 0: :class:`bool` de flag indicativo de si la respuesta
         parseada es válida, True para "successful (0x0)", False para

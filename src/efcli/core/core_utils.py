@@ -25,6 +25,8 @@ def continuar_salir(msj: str):
             exit()
         else:
             print('Ingrese una opción correcta.')
+    
+    return True # para usar ambos: fn() o 'if fn()'
 
 def guardar_archivos(*args, **kwargs) -> None:
     """

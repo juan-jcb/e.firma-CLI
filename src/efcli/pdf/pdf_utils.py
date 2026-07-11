@@ -1,9 +1,63 @@
-from io import BytesIO
+import logging
+from io import BytesIO, BufferedReader
+from pathlib import Path
+
+logging.getLogger("pikepdf").setLevel(logging.WARNING) # pikepdf gestiona su propio logger, mejor silenciar su INFO y usar solo warning
+logging.getLogger("pyhanko.pdf_utils.xref").setLevel(logging.ERROR) # [WARNING] Superfluous whitespace found in object header 3 0
+from pikepdf import open as pike_open
+
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign.validation.dss import DocumentSecurityStore
 
 from efcli import core
+
+logger = logging.getLogger(__name__)
+
+def normalizar_pdf(pdf: Path, autoconfirmar: bool) -> tuple[Path, BufferedReader, PdfFileReader, IncrementalPdfFileWriter] | None:
+    """
+    Normaliza un PDF malformado o con errores de lectura (prompt interactivo).
+    Crea un nuevo archivo PDF en base al original en su misma ruta con un sufijo
+    diferenciador.
+
+    :param pdf:
+        `Path` del PDF a normalizar.
+
+    :return:
+        `tuple` con 4 elementos:
+            idx 0: `Path` del PDF nuevo normalizado con el sufijo extendido "_NORMALIZADO" en la misma ruta de `pdf`.
+            idx 1: `BufferedReader` ABIERTO del PDF nuevo normalizado (debe cerrarse explicitamente cuando ya no se requiera)
+            idx 2: `PdfFileReader` del PDF normalizado.
+            idx 3: `IncrementalPdfFileWriter` del PDF normalizado.
+    """
+    if not autoconfirmar:
+        logger.warning("Puede corregir creando un PDF *nuevo* con el contenido visual del original y firmar ese en su lugar.\n")
+        while True:
+            opcion = input(f"Reparar '{pdf.name}'? (y/n): ")
+            if opcion == 'y' :
+                print('Reparando...')
+                break
+            elif opcion == 'n':
+                print(f"No es posible firmar en este estado. Saliendo...")
+                exit()
+            else:
+                print('Ingrese una opción correcta.')
+
+    # lo crea en el mismo directorio donde existe el anterior y retorna el str de ruta os del nuevo
+    normalizado_path = Path(f"{pdf.parent}/{pdf.stem}_NORMALIZADO{pdf.suffix}")
+
+    try:
+        normalizado = pike_open(filename_or_stream=pdf)
+        normalizado.save(filename_or_stream=normalizado_path)
+    except Exception:
+        logger.critical("No pudo normalizarse PDF: %s. Saliendo...", normalizado_path.name)
+        exit()
+    else:
+        logger.info("REPARADO: %s\n", normalizado_path.name)
+        normalizado_stream = open(f'{normalizado_path}', 'rb')
+        normalizado_lector = PdfFileReader(normalizado_stream)
+        normalizado_escritor = IncrementalPdfFileWriter(normalizado_stream)
+        return (normalizado_path, normalizado_stream, normalizado_lector, normalizado_escritor)
 
 def leer_firmas_pdf(pdf_input: str | BytesIO, usa_cifrado: bool = False) -> list[str]:
     """

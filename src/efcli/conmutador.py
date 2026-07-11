@@ -2,7 +2,7 @@ import logging
 
 from efcli import config
 
-# no me termina de agradar esta forma de importar, pero desde un inicio no tendría q está importando aqui modulos posteriores xD
+# no me termina de agradar esta forma de importar, pero desde un inicio no tendría q estár importando aquí modulos posteriores xD
 from efcli.core.sintaxis import validar_sintaxis
 from efcli.ocsp.ocsp_cli import nueva_request, imprimir_respuesta, imprimir_estado
 from efcli.xdg.usuarios import add_user, del_user, change_user, reconf_user, list_users, print_current_user, print_current_user_conf, print_current_user_toml

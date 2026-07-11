@@ -11,18 +11,20 @@ from .bootstrap import check_env
 logger = logging.getLogger(__name__)
 
 def load_state_users() -> dict:
-    '''
+    """
     Carga el JSON de usuarios desde el directorio de estado (XDG_STATE_HOME).
     Las funciones que llaman a ésta ya evaluan entorno externo viable.
-    '''
+    """
     with open(STATE_USERS_FILE, "r") as f:
         return json.loads(s=f.read())
 
 def load_principal_conf() -> dict:
-    '''
-    Carga el TOML de configuración del usuario principal (JSON de usuarios -> TOML del principal).
+    """
+    Carga el TOML de configuración del usuario principal:
+        (JSON de usuarios -> TOML del principal)
+
     Las funciones que llaman a ésta ya evaluan entorno externo viable.
-    '''
+    """
     users = load_state_users()
     with open(users['usuarios'].get(users['principal'])['config_file'], "rb") as f:
         return tomllib.load(f)
@@ -167,7 +169,8 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
     # 6. Preferencias de uso del programa.
     print(mensajes['preferencias_uso'])
     AUTOCONFIRMAR_NORMALIZADOS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar confirmación automática en los prompts para normalización de PDFs? (y/n): ", pista='Solo letras "y", "n".')
-    preferencias_uso = [f"{i == 'y'}".lower() for i in [AUTOCONFIRMAR_NORMALIZADOS,]]
+    MANTENER_NORMALIZADOS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Mantener PDFs normalizados (si los hay) al terminar las sesiones de firma? (y/n): ", pista='Solo letras "y", "n".')
+    preferencias_uso = [f"{i == 'y'}".lower() for i in [AUTOCONFIRMAR_NORMALIZADOS, MANTENER_NORMALIZADOS]]
 
     # #!. skeleton de usuario (string -> TOML, TOML -> dict)
     SKEL_USER = f'''# Configuración de usuario {NOMBRE_USUARIO}
@@ -207,6 +210,7 @@ coords_y = 85
 
 [preferencias_uso]
 autoconfirmar_normalizaciones = {preferencias_uso[0]}
+mantener_normalizados = {preferencias_uso[1]}
 
 # Consideraciones adicionales.
 # 
@@ -377,9 +381,10 @@ def change_user() -> None:
     print()
     logger.info("Bienvenido '%s'!", seleccionado)
 
+@wrappers.salida_limpia()
 @wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def reconf_user() -> None:
-    '''
+    """
     Función de prompt interactivo para reelegir parametros variables en la configuración
     del usuario principal: Metadatos de firma, Perfil de firma, firma visible.
 
@@ -388,18 +393,31 @@ def reconf_user() -> None:
     valores preexistentes en la config del principal.
 
     Se asume entorno externo viable.
-    '''
+    """
     import tomli_w
     
     users = load_state_users()
     principal_config_path = users['usuarios'][users.get('principal')]['config_file']
     principal = load_principal_conf()
-    actualizado = principal.copy()
+    dict_actualizado = principal.copy()
     opciones = []
 
-    logger.info("Reconfiguración de parametros (blanco para mantener valores previos).")
+    logger.info("Reconfiguración de parametros (dejar en blanco para mantener valores previos).")
     
-    # 4. metadatos de firma
+    # 5. preferencias sobre el perfil de firma
+    print()
+    logger.info("=== PERFILES DE FIRMA ===")
+    USAR_OCSP    = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Validación externa OCSP [{principal["perfiles_firma"]["OCSP"]}] (y/n): ", pista='Solo letras "y", "n".')
+    USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo en firma [{principal["perfiles_firma"]["TST_CMS"]}] (y/n): ", pista='Solo letras "y", "n".')
+    USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo en PDF [{principal["perfiles_firma"]["TST_DSS"]}] (y/n): ", pista='Solo letras "y", "n".')
+
+    # 6. Preferencias de uso del programa.
+    print()
+    logger.info("=== PREFERENCIAS DE USO ===")
+    AUTOCONFIRMAR_NORMALIZADOS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"¿Normalización automática de PDFs? [{principal["preferencias_uso"]["autoconfirmar_normalizaciones"]}] (y/n): ", pista='Solo letras "y", "n".')
+    MANTENER_NORMALIZADOS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"¿Mantener PDFs normalizados? [{principal["preferencias_uso"]["mantener_normalizados"]}] (y/n): ", pista='Solo letras "y", "n".')
+
+    # 4. metadatos de firma (queda al final porque es lo que menos varia de los 3 en reconf, y la mayoría de las veces solo se pisotea el ENTER.)
     print()
     logger.info("=== METADATOS DE FIRMA ===")
     ID_FIRMA        = regex.input_regex(patron=regex.ALFANUMERICO, mensaje=f"Identificador de la firma [{principal["metadatos_firma"]["nombre_firma"]}]: ", pista="Alfanumerico mayus/minus.")
@@ -407,18 +425,6 @@ def reconf_user() -> None:
     RAZON           = regex.input_regex(patron=regex.SPANISH, mensaje=f"Razón de firma [{principal["metadatos_firma"]["razon"]}]: ", pista="Solo caracteres del alfabeto en español.")
     LUGAR           = regex.input_regex(patron=regex.SPANISH, mensaje=f"Lugar de firma [{principal["metadatos_firma"]["lugar"]}]: ", pista="Solo caracteres del alfabeto en español.")
     CONTACTO        = regex.input_regex(patron=regex.CORREOS, mensaje=f"Correo del firmante [{principal["metadatos_firma"]["contacto"]}]: ", pista="Solo correos electrónicos.")
-    
-    # 5. preferencias sobre el perfil de firma
-    print()
-    logger.info("=== PERFILES DE FIRMA ===")
-    USAR_OCSP    = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Validación OCSP [{principal["perfiles_firma"]["OCSP"]}] (y/n): ", pista='Solo letras "y", "n".')
-    USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo TST en su contenedor firma [{principal["perfiles_firma"]["TST_CMS"]}] (y/n): ", pista='Solo letras "y", "n".')
-    USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"Sello de tiempo TST en PDF (/DocTimeStamp) [{principal["perfiles_firma"]["TST_DSS"]}] (y/n): ", pista='Solo letras "y", "n".')
-
-    # 6. Preferencias de uso del programa.
-    print()
-    logger.info("=== PREFERENCIAS DE USO ===")
-    AUTOCONFIRMAR_NORMALIZADOS = regex.input_regex(patron=regex.SI_NO_BLANK, mensaje=f"¿Normalización automática de PDFs? [{principal["preferencias_uso"]["autoconfirmar_normalizaciones"]}] (y/n): ", pista='Solo letras "y", "n".')
 
     # relación semántica hardcodeada, funciona pero me parece cuestionable.
     for i in [("nombre_firma", ID_FIRMA), ("nombre_firmante", NOMBRE_FIRMANTE), ("razon", RAZON), ("lugar", LUGAR), ("contacto", CONTACTO)]:
@@ -427,7 +433,7 @@ def reconf_user() -> None:
             opciones.append(principal["metadatos_firma"].get(i[0]))
         else:
             opciones.append(i[1])
-    actualizado["metadatos_firma"] = {k: opciones[idx] for idx, k in enumerate(principal["metadatos_firma"], 0)}
+    dict_actualizado["metadatos_firma"] = {k: opciones[idx] for idx, k in enumerate(principal["metadatos_firma"], 0)}
     opciones.clear()
 
     for i in [("OCSP", USAR_OCSP), ("TST_CMS", USAR_TSA_CMS), ("TST_DSS", USAR_TSA_DSS)]:
@@ -437,20 +443,20 @@ def reconf_user() -> None:
             opciones.append(True)
         else: # 'n'
             opciones.append(False)
-    actualizado["perfiles_firma"] = {k: opciones[idx] for idx, k in enumerate(principal["perfiles_firma"], 0)}
+    dict_actualizado["perfiles_firma"] = {k: opciones[idx] for idx, k in enumerate(principal["perfiles_firma"], 0)}
     opciones.clear()
 
-    for i in [("autoconfirmar_normalizaciones", AUTOCONFIRMAR_NORMALIZADOS)]:
+    for i in [("autoconfirmar_normalizaciones", AUTOCONFIRMAR_NORMALIZADOS), ("mantener_normalizados", MANTENER_NORMALIZADOS)]:
         if not i[1]:
             opciones.append(principal["preferencias_uso"].get(i[0]))
         elif i[1] == 'y':
             opciones.append(True)
         else: # 'n'
             opciones.append(False)
-    actualizado["preferencias_uso"] = {k: opciones[idx] for idx, k in enumerate(principal["preferencias_uso"], 0)}
+    dict_actualizado["preferencias_uso"] = {k: opciones[idx] for idx, k in enumerate(principal["preferencias_uso"], 0)}
     opciones.clear() # no es necesario pero solo por estetica visual
 
-    toml_actualizado = tomli_w.dumps(actualizado)
+    toml_actualizado = tomli_w.dumps(dict_actualizado)
     print()
     logger.info("Guardando...")
     try:
