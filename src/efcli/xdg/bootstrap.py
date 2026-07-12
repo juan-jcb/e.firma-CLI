@@ -176,18 +176,18 @@ trust_roots = "{xdg_config.DATA_PKI_DIR / 'banxico_root_bundle.pem'}"
 intermediate_cas = "{xdg_config.DATA_PKI_DIR / 'sat_intermedia_bundle.pem'}"
 
 [OCSP]
+# el X509 del responder curiosamente si tiene extensión AIA: OCSP - URI:http://www.sat.gob.mx/ocsp
 endpoints = [
     "https://cfdi.sat.gob.mx/edofiel",
     "https://www.sat.gob.mx/ocsp"
 ]
-# el X509 del responder curiosamente si tiene extensión AIA: OCSP - URI:http://www.sat.gob.mx/ocsp
 
 [TSA]
-CMS_URI = "https://freetsa.org/tsr"
-CMS_HASH = "sha384"
-
-DSS_URI = "https://freetsa.org/tsr"
-DSS_HASH = "sha384"
+endpoints = [
+    "https://freetsa.org/tsr",
+#    "https://pki.codegic.com/codegic-service/timestamp"
+]
+HASH = "sha256"
 '''
 
     # Estructura lógica del entorno externo tras init()

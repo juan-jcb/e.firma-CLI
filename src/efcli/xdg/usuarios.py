@@ -3,7 +3,7 @@ from pathlib import Path
 from hashlib import sha256
 from colorama import Fore
 
-from efcli.core import registros, wrappers, regex, pki, x509, pkey
+from efcli.core import cripto, registros, wrappers, regex, pki, x509
 from . import mensajes
 from .xdg_config import STATE_USERS_FILE, CONFIG_DIR
 from .bootstrap import check_env
@@ -113,7 +113,7 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
         pkey_input = Path(input("Ruta absoluta de la clave privada del firmante (.key): "))
         if pkey_input.is_file():
             try:
-                cifrada, encode = pkey.es_pkey_cifrada(ruta_pkey=pkey_input)
+                cifrada, encode = cripto.es_pkey_cifrada(ruta_pkey=pkey_input)
             except Exception:
                 logger.warning("El archivo ingresado no es una clave privada. Ingresela nuevamente.")
                 continue
@@ -124,7 +124,7 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
                     logger.info("Descifre su clave para calcular valores públicos y compararlos (no se almacena nunca su contraseña).")
                     while True:
                         password = getpass.getpass(prompt="Ingrese su contraseña: ", echo_char="*").encode('utf-8')
-                        if pkey.es_passwd_de_pkey(ruta_pkey=pkey_input, tipo_encode=encode, passwd=password):
+                        if cripto.es_passwd_de_pkey(ruta_pkey=pkey_input, tipo_encode=encode, passwd=password):
                             break
                         else:
                             print("Contraseña INCORRECTA, vuelva a ingresarla.")
@@ -133,7 +133,7 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
                     password = None
                 
                 logger.info("Comparando fingreprints...")
-                fingerprint_pubkey = sha256(data=pkey.bytes_publicos_rsa(ruta_pkey=pkey_input, encode=encode, password=password)).digest()
+                fingerprint_pubkey = sha256(data=cripto.bytes_publicos_rsa(ruta_pkey=pkey_input, encode=encode, password=password)).digest()
                 if not fingerprint_pubcrt == fingerprint_pubkey:
                     logger.error("El fingerprint de su clave NO coincide con el de la clave en el certificado! ¿Ingresó una diferente?")
                     continue

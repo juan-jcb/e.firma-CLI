@@ -4,7 +4,7 @@ from cryptography.x509 import ocsp as crypto_ocsp
 
 from efcli.core import core_utils
 
-from . import fetcher, ocsp_utils
+from . import fetchers, ocsp_utils
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +117,7 @@ def nueva_request(propia: bool = False, cert_file: str = None):
     logger.info("Certificado X.509: %s (%s) %s", sujeto, encode, added_name)
     for i in endpoints:
         logger.info("Consultando endpoint: '%s'", i)
-        response = fetcher.fetch(ocsp_request=request, endpoint=i)
+        response = fetchers.sync_fetch(ocsp_request=request, endpoint=i)
         if response:
             print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] El endpoint ha respondido.")
             break

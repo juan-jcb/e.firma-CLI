@@ -10,7 +10,7 @@ from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
 from pyhanko.sign.validation.dss import DocumentSecurityStore
 
-from efcli import core
+from efcli.core import cripto, x509
 
 logger = logging.getLogger(__name__)
 
@@ -131,12 +131,12 @@ def leer_firmas_pdf(pdf_input: str | BytesIO, usa_cifrado: bool = False) -> list
         idx2 = 0
         for i in total_firmas:
             if i == regulares[idx1]:
-                firmas_etiquetadas.append((etiquetas[0], i))
+                firmas_etiquetadas.append((i, etiquetas[0]))
                 idx1 += 1
                 if idx1 == len(regulares): # no me agrada para evitar errores de 'sumó a un indice inexistente' pero eh, funciona ¯\_(ツ)_/¯
                     idx1 -= 1
             elif i == incrementales[idx2]:
-                firmas_etiquetadas.append((etiquetas[1], i))
+                firmas_etiquetadas.append((i, etiquetas[1]))
                 idx2 += 1
                 if idx2 == len(incrementales):
                     idx2 -= 1
@@ -149,13 +149,19 @@ def leer_firmas_pdf(pdf_input: str | BytesIO, usa_cifrado: bool = False) -> list
         if incrementales:
             tag = etiquetas[1]
 
-        firmas_etiquetadas = [(tag, i) for i in total_firmas]
+        firmas_etiquetadas = [(i, tag) for i in total_firmas]
 
     #for i in range(0, len(total_firmas)): # técnicamente es lo mismo dado que se vuelve a llenar con la misma cantidad de elementos
     for i in range(0, len(firmas_etiquetadas)):
-        tipo = firmas_etiquetadas[i][0]
-        firma = firmas_etiquetadas[i][1]
-        firmas.append(f"{core.x509.leer_subject_simple(cert=firma.signer_cert)} ({tipo})")
+        firma = firmas_etiquetadas[i][0]
+        tipo = firmas_etiquetadas[i][1]
+
+        # TODO: asumimos mucho, pero de momento funciona.
+        if tipo == etiquetas[0]: # Regular
+            if cripto.extraer_tst_cms(cms=firma.pkcs7_content, signer=0, contrafirma=0):
+                tipo = "Regular + Timestamp"
+
+        firmas.append(f"{x509.leer_subject_simple(cert=firma.signer_cert)} ({tipo})")
 
     return firmas
 

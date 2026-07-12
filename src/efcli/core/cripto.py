@@ -87,10 +87,25 @@ def bytes_publicos_rsa(ruta_pkey: str | Path, encode: str = "DER", password: byt
 
     return pkey.public_key().public_bytes(encoding=Encoding.DER, format=PublicFormat.PKCS1)
 
-def extraer_tst_general(tst: bytes) -> bytes | None:
+def extraer_tst_cms(cms: bytes, signer: int, contrafirma: int) -> bytes | None:
     """
-    Extrae los bytes DER de un TST en el 'Encapsulated Content Info'
-    general de un TST (CMS Signed Data de TSA).
+    Extrae un 'TST' anidado en las contrafirmas de N 'SigerInfo' en un 'CMS'.
+    """
+    contenedor = ContentInfo.load(encoded_data=cms)
+
+    unsignedAttrs = contenedor["content"]["signer_infos"][signer]["unsigned_attrs"]
+    if not unsignedAttrs:
+        return None # El firmante no tiene de unsigned_attrs, no puede haber contrafirmas.
+
+    for i in unsignedAttrs:
+        #if j["type"].native == "signature_time_stamp_token":
+        if i["type"].dotted == "1.2.840.113549.1.9.16.2.14":
+            return i["values"][contrafirma].dump()
+            #return i["values"][contrafirma]["content"]["encap_content_info"]["content"].contents # Solo bytes der de TSTInfo
+
+def extraer_tstinfo(tst: bytes) -> bytes | None:
+    """
+    Extrae el 'TSTInfo' de un 'TST' (Su 'Encapsulated Content Info').
     """
     contenedor = ContentInfo.load(encoded_data=tst)
     #if contenedor["content"]["encap_content_info"]["content_type"].native == "tst_info":
@@ -98,20 +113,3 @@ def extraer_tst_general(tst: bytes) -> bytes | None:
         return contenedor["content"]["encap_content_info"].contents
     else:
         return None
-
-def extraer_tst_signer(cms: bytes, signer: int, contrafirma: int) -> bytes:
-    """
-    Extrae los bytes DER de un TST anidado en las contrafirmas de un
-    SigerInfo.
-    """
-    contenedor = ContentInfo.load(encoded_data=cms)
-
-    unsignedAttrs = contenedor["content"]["signer_infos"][signer]["unsigned_attrs"]
-    if not unsignedAttrs:
-        raise ValueError('El firmante CARECE de atributos no firmados.')
-
-    for i in unsignedAttrs:
-        #if j["type"].native == "signature_time_stamp_token":
-        if i["type"].dotted == "1.2.840.113549.1.9.16.2.14":
-            return i["values"][contrafirma].dump()
-            #return i["values"][contrafirma]["content"]["encap_content_info"]["content"].contents # Solo bytes der de TSTInfo

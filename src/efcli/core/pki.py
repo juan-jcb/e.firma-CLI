@@ -125,7 +125,6 @@ def get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="
                     validation_context=pki_ctx,
                 ).async_validate_usage({"digital_signature"})
             )
-
         # certs de servidores OCSP
         elif tipo == "ocsp_responder":
             chain_path = asyncio.run(
@@ -136,6 +135,37 @@ def get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="
             )
 
     # pyhanko_certvalidator.errors.ExpiredError: The path could not be validated because the end-entity certificate expired 2026-04-23 17:13:16Z
+    except ExpiredError as e:
+        logger.error("Certificado X.509 EXPIRADO: %s", e.expired_dt.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        return None
+    except Exception as e:
+        logger.error(e)
+        return None
+    else:
+        return chain_path
+
+async def async_get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="firmante") -> ValidationPath | None:
+    """
+    Misma función de construcción de ValidationPath pero asumiendo que ya
+    existe un bucle de eventos de asyncio.
+
+    Efectivamente le copiaré a pyhanko con su "sync wrapper over async core"
+    donde el código async es la única fuente de verdad, y se decide caso por
+    caso según si el llamador tiene un bucle de eventos activo o no cuál de
+    las dos funciones usar.
+    """
+    try:
+        validator = CertificateValidator(
+            end_entity_cert=cert,
+            validation_context=pki_ctx,
+        )
+        # certs de firmantes en general (FIEL o SELLO)
+        if tipo == "firmante":
+            chain_path = await validator.async_validate_usage({"digital_signature"})
+        # certs de servidores OCSP
+        elif tipo == "ocsp_responder":
+            chain_path = await validator.async_validate_usage(key_usage={}, extended_key_usage={"ocsp_signing"})
+
     except ExpiredError as e:
         logger.error("Certificado X.509 EXPIRADO: %s", e.expired_dt.strftime("%Y-%m-%dT%H:%M:%SZ"))
         return None

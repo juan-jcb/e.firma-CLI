@@ -1,4 +1,4 @@
-import logging, getpass
+import logging, getpass, asyncio
 from io import BytesIO
 from pathlib import Path
 from time import perf_counter, sleep, time
@@ -15,15 +15,24 @@ from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.sign.timestamps.common_utils import TimestampRequestError
 
 from efcli import config
-from efcli.core import core_utils, wrappers, registros, pki, x509, pkey
+from efcli.core import core_utils, cripto, wrappers, registros, pki, x509, tls
 from efcli.xdg import xdg_config, usuarios
-from efcli.ocsp import fetcher, ocsp_utils
+from efcli.ocsp import fetchers, ocsp_utils
 from efcli.pdf import pdf_utils
 from efcli.firma import prefirma
 
 logger = logging.getLogger(__name__)
 
-def manejador_ocsp(firmante_crt, firmante_issuer_crt, endpoints: list, pki_ctx, dir_save):
+xdg_config.load_global()
+BANXICO_PKI_CTX = pki.get_validation_context(
+    trust_roots=xdg_config.GLOBAL_CONFIG['PKI']['trust_roots'],
+    intermediate_cas=xdg_config.GLOBAL_CONFIG['PKI']['intermediate_cas'],
+)
+TSA = xdg_config.GLOBAL_CONFIG['TSA']
+OCSP = xdg_config.GLOBAL_CONFIG['OCSP']
+PDF_RUTA_BASE = xdg_config.GLOBAL_CONFIG['pdf_ruta_base']
+
+async def manejador_ocsp(firmante_crt, firmante_issuer_crt, dir_save):
     OCSP_INFO = None
     OCSP_REQUEST = ocsp_utils.coinstruir_OCSPRequest(cert_client=firmante_crt, cert_issuer=firmante_issuer_crt)
     OCSP_RESPONSE = None
@@ -37,9 +46,9 @@ def manejador_ocsp(firmante_crt, firmante_issuer_crt, endpoints: list, pki_ctx, 
     PERFIL_OCSP = []
 
     # iteración sobre todos los endpoints disponibles para hacer la petición.
-    for endpoint in endpoints:
+    for endpoint in OCSP['endpoints']:
         logger.info("Consultando endpoint: %s", endpoint)
-        OCSP_RESPONSE = fetcher.fetch(ocsp_request=OCSP_REQUEST, endpoint=endpoint)
+        OCSP_RESPONSE = fetchers.sync_fetch(ocsp_request=OCSP_REQUEST, endpoint=endpoint)
         if not OCSP_RESPONSE:
             print()
             continue
@@ -132,11 +141,11 @@ def manejador_ocsp(firmante_crt, firmante_issuer_crt, endpoints: list, pki_ctx, 
             # responder, issuer, issuer, ... (sin raíz)
             logger.info("Reconstruyendo cadena de confianza del responder...")
             try:
-                OCSP_CA_CHAIN = [i for i in pki.get_ca_chain(cert=OCSP_RESPONDER_X509, tipo='ocsp_responder', pki_ctx=pki_ctx)]
+                OCSP_CA_CHAIN = [i for i in await pki.async_get_ca_chain(cert=OCSP_RESPONDER_X509, tipo='ocsp_responder', pki_ctx=BANXICO_PKI_CTX)]
                 #ocsp_root_x509      = OCSP_CA_CHAIN[0]
                 #ocsp_inters_x509    = OCSP_CA_CHAIN[-3:0:-1]
                 ocsp_issuer_x509    = OCSP_CA_CHAIN[-2]
-                ocsp_responder_x509 = OCSP_CA_CHAIN[-1]
+                #ocsp_responder_x509 = OCSP_CA_CHAIN[-1]
 
                 # TODO: Aquí no es ncesario desglosar con 'if OCSP_INTERS:' ???
 
@@ -201,45 +210,40 @@ def manejador_ocsp(firmante_crt, firmante_issuer_crt, endpoints: list, pki_ctx, 
     if OCSP_INFO:
         core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{hora}', 'der', status_ocsp=OCSP_RAW_RESPONSE)
         core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{hora}', 'txt', status_ocsp_textual=OCSP_PARSED_RESPONSE.encode('utf-8'))
-        core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{hora}', 'pem', responder_x509=pem.armor(der_bytes=ocsp_responder_x509.dump(), type_name="CERTIFICATE"))
+        core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{hora}', 'pem', responder_x509=pem.armor(der_bytes=OCSP_RESPONDER_X509.dump(), type_name="CERTIFICATE"))
         if OCSP_CA_CHAIN:
             core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{hora}', 'pem', responder_cadena=pki.hacer_cadena_pem(chain_path=OCSP_CA_CHAIN, elementos="no_subject"))
             core_utils.guardar_archivos(f'{dir_save}/ocsp_info.{hora}', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=OCSP_CA_CHAIN).encode('utf-8'))
 
     return (PERFIL_OCSP, OCSP_RESPONSES, OCSP_X509_DSS)
 
-def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
-    FIRMANTE = firmante_input['firmante']
-    SIG_META = firmante_input['metadatos_firma']
-    PERFILES_FIRMA = firmante_input['perfiles_firma']
-    CAMPO_VISUAL = firmante_input['firma_visible']
-    BANXICO_PKI_CTX = pki_ctx
-    TSA = xdg_config.GLOBAL_CONFIG['TSA']
-
-    PERFIL_FIRMA_PROPUESTO = ['B']
+def contexto(firmante_input: dict) -> dict | None:
+    firmante_fiel = firmante_input['firmante']
+    sig_meta = firmante_input['metadatos_firma']
+    campo_visual = firmante_input['firma_visible']
 
     logger.info("Definiendo al firmante.")
     print("    1. Cargando contexto PKI del firmante...")
 
-    cert, cert_encode = x509.cargar_cert_asn1(cert=FIRMANTE['certificado'])
+    cert, cert_encode = x509.cargar_cert_asn1(cert=firmante_fiel['certificado'])
     print(f"     • Certificado ({cert_encode}) cargado.")
 
     try:
         # En caso de que metan una CA intermedia nueva no se afecta este código (supuestamente ;-;)
         # dejando como unica acción necesaria la adición explicita del x509 nuevo en docs de PKI.
-        SUBJECT_CA_CHAIN = [i for i in pki.get_ca_chain(cert=cert, tipo='firmante', pki_ctx=BANXICO_PKI_CTX)]
+        firmante_ca_chain = [i for i in pki.get_ca_chain(cert=cert, tipo='firmante', pki_ctx=BANXICO_PKI_CTX)]
 
-        #X509_ROOT     = SUBJECT_CA_CHAIN[0]       # aunque se tiene acceso a su x509, la raíz se asume en el validador.
-        SUBJECT_INTERS = SUBJECT_CA_CHAIN[-3:0:-1] # slice invertido para incluir (desde -3) n cantidad de CAs intermedias sin raíz
-        X509_ISSUER    = SUBJECT_CA_CHAIN[-2]
-        X509_SUBJECT   = SUBJECT_CA_CHAIN[-1]
+        #firmante_x509_root  = firmante_ca_chain[0]       # aunque se tiene acceso a su x509, la raíz se asume en el validador.
+        firmante_inters_ca   = firmante_ca_chain[-3:0:-1] # slice invertido para incluir (desde -3) n cantidad de CAs intermedias sin raíz
+        firmante_issuer      = firmante_ca_chain[-2]
+        firmante_x509        = firmante_ca_chain[-1]
 
-        subject_certs = [X509_ISSUER]
-
-        # si agregasen más CAs se distribuirán dinámicamente aquí. 'SUBJECT_INTERS' será lista vacia hasta
-        # que exista un elemento nuevo en indice de CA intermedia.
-        if SUBJECT_INTERS:
-            subject_certs += [i for i in SUBJECT_INTERS]
+        # 'subject_certificates' es ambos "Certificates" en CMS y la base de /Certs en /DSS
+        subject_certificates = [firmante_x509, firmante_issuer]
+        if firmante_inters_ca:
+            subject_certificates += [i for i in firmante_inters_ca]
+            # si agregasen más CAs se distribuirán dinámicamente aquí. Por el momento 'firmante_inters_ca' será lista vacia
+            # hasta que exista un elemento nuevo en indices de CAs intermedias, si no hay, se sumara por lógica de append de lista vacia.
 
     except Exception:
         logger.error("No se puede establecer el contexto PKI del firmante.")
@@ -249,12 +253,12 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
         print("     • Cadena de confianza establecida.")
 
     print("\n    2. Cargando clave privada del firmante...")
-    res, tipo_pkey = pkey.es_pkey_cifrada(ruta_pkey=FIRMANTE['clave_privada'])
+    res, tipo_pkey = cripto.es_pkey_cifrada(ruta_pkey=firmante_fiel['clave_privada'])
     if res == True:
         print("     • Clave privada cifrada.")
         while True:
             pkey_passwd = getpass.getpass(prompt="     • Contraseña: ", echo_char="*").encode('utf-8')
-            if pkey.es_passwd_de_pkey(ruta_pkey=FIRMANTE['clave_privada'], tipo_encode=tipo_pkey, passwd=pkey_passwd):
+            if cripto.es_passwd_de_pkey(ruta_pkey=firmante_fiel['clave_privada'], tipo_encode=tipo_pkey, passwd=pkey_passwd):
                 print(f"     • Clave privada ({tipo_pkey}) cargada.")
                 break
             else:
@@ -267,12 +271,12 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
 
     try:
         firmante_simple = signers.SimpleSigner.load(
-            key_file=FIRMANTE['clave_privada'],
+            key_file=firmante_fiel['clave_privada'],
             key_passphrase=pkey_passwd,
-            cert_file=FIRMANTE['certificado'],
+            cert_file=firmante_fiel['certificado'],
 
-            other_certs=subject_certs,  # "Certificates" en el CMS. Mientras el orden aquí sea CONSTANTE, /Certs de /DSS será congruente.
-                                        # Al definir al firmante se entiende en este parametro: [X509_SUBJECT, X509_ISSUER]
+            other_certs=subject_certificates, # campo "Certificates" en el CMS. Mientras el orden aquí sea CONSTANTE, /Certs de /DSS será congruente.
+                                              # [X509_SUBJECT, X509_ISSUER]
 
             # TODO:
             # sería ideal cargar el objeto certificado en cert_file en lugar de la ruta
@@ -286,13 +290,13 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
     print("    3. Cargando metadatos de la firma...")
     try:
         firmante_simple_sigmeta = signers.PdfSignatureMetadata(
-            field_name=SIG_META['nombre_firma'],
+            field_name=sig_meta['nombre_firma'],
 
-            name=SIG_META['nombre_firmante'],
-            reason=SIG_META['razon'],
-            location=SIG_META['lugar'],
-            contact_info=SIG_META['contacto'],
-            md_algorithm=TSA['CMS_HASH'],
+            name=sig_meta['nombre_firmante'],
+            reason=sig_meta['razon'],
+            location=sig_meta['lugar'],
+            contact_info=sig_meta['contacto'],
+            md_algorithm=TSA['HASH'],
             timestamp_field_name=datetime.now(),
 
             subfilter=fields.SigSeedSubFilter.PADES,                    # Subfiltro estándar: /SubFilter /ETSI.CAdES.detached
@@ -307,52 +311,14 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
         logger.error("Error definiendo los meadatos de la firma, no puede firmarse en este estado. (%s)", e)
         return False
     else:
-        print(f"     • ID Firma:  {SIG_META['nombre_firma']}")
-        print(f"     • Nombre:    {SIG_META['nombre_firmante']}")
-        print(f"     • Razón:     {SIG_META['razon']}")
-        print(f"     • Lugar:     {SIG_META['lugar']}")
-        print(f"     • Contacto:  {SIG_META['contacto']}")
-
-    print("\n    4. Cargando contexto opcional de la firma...")
-    # OCSP para estado del firmante (perfil 'L')
-    if PERFILES_FIRMA['OCSP'] == True:
-        print(f"     • Se utilizará OCSP '{xdg_config.GLOBAL_CONFIG['OCSP']['endpoints'][0]}' para validación externa (Fallbacks: {len(xdg_config.GLOBAL_CONFIG['OCSP']['endpoints'])-1}).")
-        PERFIL_FIRMA_PROPUESTO[0] = 'L'
-    else:
-        print('     • NO se utilizará OCSP para validar su certificado X.509.')
-
-    # TST en CMS (perfil 'T')
-    if PERFILES_FIRMA['TST_CMS'] == True:
-        try:
-            firmante_simple_ts_cms = timestamps.HTTPTimeStamper(url=TSA['CMS_URI'])
-        except Exception:
-            logger.warning("No se pudo configurar timestamp para CMS. Continuando sin el...")
-            firmante_simple_ts_cms = None
-        else:
-            print(f"     • Se utilizará TSA '{TSA['CMS_URI']}' para timestamping en su firma (CMS).")
-            PERFIL_FIRMA_PROPUESTO.append('T')
-    else:
-        print('     • NO se utilizará TSA para timestamping en su firma (CMS).')
-        firmante_simple_ts_cms = None
-
-    # TST en DSS /DocTimeStamp (perfil 'A')
-    if PERFILES_FIRMA['TST_DSS'] == True:
-        try:
-            http_ts_dss = timestamps.HTTPTimeStamper(url=TSA['DSS_URI'])
-            ts_dss = signers.PdfTimeStamper(timestamper=http_ts_dss)
-        except Exception:
-            logger.warning("No se pudo configurar timestamp en PDF (/DocTimeStamp). Continuando sin el...")
-            ts_dss = None
-        else:
-            print(f"     • Se utilizará TSA '{TSA['DSS_URI']}' para timestamping en PDF (/DocTimeStamp).")
-            PERFIL_FIRMA_PROPUESTO.append('A')
-    else:
-        print('     • NO se utilizará TSA para timestamping en PDF (/DocTimeStamp).')
-        ts_dss = None
+        print(f"     • ID Firma:      {sig_meta['nombre_firma']}")
+        print(f"     • Nombre:        {sig_meta['nombre_firmante']}")
+        print(f"     • Razón:         {sig_meta['razon']}")
+        print(f"     • Lugar:         {sig_meta['lugar']}")
+        print(f"     • Contacto:      {sig_meta['contacto']}")
 
     # Campo de firma visual en PDF
-    if CAMPO_VISUAL['usar'] == True:
-        print("     • Configurando CAMPO visible de la firma...")
+    if campo_visual['usar'] == True:
         #coords_x = 50
         #coords_y = 50
         ancho = 200
@@ -360,88 +326,49 @@ def contexto(firmante_input: dict, pki_ctx: ValidationContext) -> dict | None:
 
         try:
             campo_visual = fields.SigFieldSpec(
-                sig_field_name=SIG_META['nombre_firma'],
-                on_page=CAMPO_VISUAL['pagina'],
+                sig_field_name=sig_meta['nombre_firma'],
+                on_page=campo_visual['pagina'],
 
                 box=(
-                    CAMPO_VISUAL['coords_x'],
-                    CAMPO_VISUAL['coords_y'],
-                    CAMPO_VISUAL['coords_x'] + ancho,
-                    CAMPO_VISUAL['coords_y'] + alto,
+                    campo_visual['coords_x'],
+                    campo_visual['coords_y'],
+                    campo_visual['coords_x'] + ancho,
+                    campo_visual['coords_y'] + alto,
                 )
             )
         except Exception as e:
             logger.error("Fallo al configurar el CAMPO visible de la firma. (%s)", e)
             return False
+        else:
+            print("     • Campo visual:  xXxXxX TERMINAAAAAR")
     else:
-        print('     • NO se utilizará CAMPO para firma visible en PDF.')
+        print('     • Campo visual:  NO se utilizará CAMPO para firma visible en PDF.')
         campo_visual = None
 
-    # Instanciación de objeto "firmante de pdf" en la clase encapsuladora PdfSigner con las opciones acumuladas.
-    try:
-        firmante_pdf = signers.PdfSigner(
-            signer=firmante_simple,
-            signature_meta=firmante_simple_sigmeta,
-            timestamper=firmante_simple_ts_cms,
-            new_field_spec=campo_visual,
-        )
-    except Exception as e:
-        print(e)
-        return False
-    else:
-        print(f"[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Firmante y contexto operacional listo.")
+    return {
+        "firmante_simple": firmante_simple,
+        "firmante_simple_sigmeta": firmante_simple_sigmeta,
+        "campo_visual": campo_visual,
+        #"firmante_simple_ts_cms": firmante_simple_ts_cms, # El timestamper se omite deliberadamente para contexto()
 
-    # Mensajes últimos de desglose y prompt de confirmación.
-    print()
-    logger.info("Firmante: %s", x509.leer_subject_simple(cert=X509_SUBJECT))
-    logger.info("Perfil de firma propuesto: PAdES-B-%s", ''.join(PERFIL_FIRMA_PROPUESTO))
-    #print(f'\n• Documentos a firmar: {PDFs}')
-    #print(pki.leer_ca_chain_simple(chain_path=CA_CHAIN_SUBJECT))
-
-    if PERFILES_FIRMA['OCSP'] == True:
-        print(f"\n{config.MENSAJES_MISC['msj_desfase_temporal']}")
-
-    core_utils.continuar_salir(msj='\n¿Proceder y firmar? (y/n): ')
-
-    firmante_ctx = {
-        'firmante': firmante_pdf,
-        'firmante_ca_chain': SUBJECT_CA_CHAIN,
-        'perfiles_firma': PERFILES_FIRMA,
-
-        'tst_dss_timestamper': ts_dss,
-        'tst_dss_hash': TSA['DSS_HASH'],
-
-        'contexto_pki': BANXICO_PKI_CTX,
+        "subject_certificates": subject_certificates,
+        "firmante_ca_chain": firmante_ca_chain,
+        "preferencias_firma": firmante_input['perfiles_firma']
     }
 
-    return firmante_ctx
-
-def firma(firmante_ctx: dict, pdfs: list) -> None:
-    '''
-    Firmar digitalmente un PDF. Firmante Individual.
-    Operaciones dependientes de desfase temporal.
-    '''
-    USUARIO_PRINCIPAL = usuarios.load_state_users()['principal']
-    RUTA_BASE = xdg_config.GLOBAL_CONFIG['pdf_ruta_base']
-    DIR_SESION_FIRMA = Path(f'{RUTA_BASE}/({USUARIO_PRINCIPAL}) Sesión de Firma - {datetime.now().strftime("%a %b %d %I:%M:%S %p %Y")}')
-
-    BANXICO_PKI_CTX = firmante_ctx['contexto_pki']
-    FIRMANTE = firmante_ctx['firmante']
-    FIRMANTE_CA_CHAIN = firmante_ctx['firmante_ca_chain']
-    PERFIL_FIRMA_INICIAL = ['B']
-
-    USAR_OCSP = firmante_ctx['perfiles_firma']['OCSP']
-    OCSP_URIS = xdg_config.GLOBAL_CONFIG['OCSP']['endpoints']
-    OCSP_RESPONSES = None
-    TIMER_OCSP = False
-
-    TST_CMS = None
-    TST_DSS = None
-    DSS_TIMESTAMPER = firmante_ctx['tst_dss_timestamper']
-    DSS_TIMESTAMP_HASH = firmante_ctx['tst_dss_hash']
-
+async def firma(firmante_ctx: dict, pdfs: list) -> None:
+    """
+    Firmar digitalmente uno/muchos PDF. Firmante Individual.
+    """    
     PDFs = pdfs
-    L_PDFS = len(PDFs)
+    l_pdfs = len(PDFs)
+    ocsp_responses = None
+    timer_ocsp = False
+    tst_cms = None
+    tst_dss = None
+    dir_sesion_firma = Path(f'{PDF_RUTA_BASE}/({usuarios.load_state_users()['principal']}) Sesión de Firma - {datetime.now().strftime("%a %b %d %I:%M:%S %p %Y")}')
+    perfil_firma_propuesto = ['B']
+    perfil_firma_final = ['B']
 
     # /Certs de /DSS
     # El llenado de objetos certificado de la lista DSS_CERTS se prefiere en órden: [end, inter, inter, ...] SIN RAÍZ
@@ -451,218 +378,285 @@ def firma(firmante_ctx: dict, pdfs: list) -> None:
     # - Posteriormente en caso de utilizar validación OCSP e incluir certificados x509 del responder, el orden
     #   de llenado continua en lógica de .append(): [end, inter, inter, ..., ocsp, inter, inter, ...] de igual
     #   forma sin incluír la raíz de ninguna entidad final ya que se asume esta existirá en el validador.
-    DSS_CERTS = [FIRMANTE.signer.signing_cert]
-    for i in FIRMANTE.signer.cert_registry.certs.values():
-        DSS_CERTS.append(i)
+    dss_certs = firmante_ctx["subject_certificates"]
 
-    print()
-    logger.info("Iniciando sesión de firma.")
-    DIR_SESION_FIRMA.mkdir(parents=True)
-    core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/firmante_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=FIRMANTE_CA_CHAIN).encode('utf-8'))
-    core_utils.guardar_archivos(
-        f'{DIR_SESION_FIRMA}/firmante_info', 'pem',
-        firmante_x509=pem.armor(der_bytes=FIRMANTE.signer.signing_cert.dump(), type_name="CERTIFICATE"),
-        firmante_cadena=pki.hacer_cadena_pem(chain_path=FIRMANTE_CA_CHAIN, elementos="no_subject")
-    )
-    ini_time = perf_counter()
+    tls_ctx = tls.make_tls_trust(trust_system_store=True, ca_bundle=None)
+    async with tls.TransporteTLSFirmas(ssl_context=tls_ctx) as tls_transport:
 
-    with registros.modded_logs(target_logger=logger, fmt="[%(levelname)s] (%(asctime)s) %(message)s"):
-        if USAR_OCSP == True:
-            print()
-            logger.info("Iniciando validación externa mediante 'Online Certificate Status Protocol (OCSP)'.")
-            perfil_ocsp, OCSP_RESPONSES, ocsp_x509_dss = manejador_ocsp(
-                firmante_crt=DSS_CERTS[0],
-                firmante_issuer_crt=DSS_CERTS[1],
-                endpoints=OCSP_URIS,
-                pki_ctx=BANXICO_PKI_CTX,
-                dir_save=DIR_SESION_FIRMA
+        print()
+        logger.info("Cargando contexto opcional de la firma...")
+
+        # OCSP para estado del firmante (perfil 'L')
+        if firmante_ctx['preferencias_firma']['OCSP'] == True:
+            print(f"     • Se utilizará OCSP '{OCSP['endpoints'][0]}' para validación externa (Fallbacks: {len(OCSP['endpoints']) - 1}).")
+            perfil_firma_propuesto[0] = 'L'
+        else:
+            print('     • NO se utilizará OCSP para validar su certificado X.509.')
+
+        # TST en CMS (perfil 'T')
+        if firmante_ctx['preferencias_firma']['TST_CMS'] == True:
+            try:
+                ts_cms = tls_transport.get_timestamper(tsa_endpoint=TSA['endpoints'][0], https=False)
+            except Exception as e:
+                logger.warning("No se pudo configurar timestamp para CMS. Continuando sin el...")
+                print(e)
+                ts_cms = None
+            else:
+                print(f"     • Se utilizará TSA '{TSA['endpoints'][0]}' para timestamping en su firma (CMS).")
+                perfil_firma_propuesto.append('T')
+        else:
+            print('     • NO se utilizará TSA para timestamping en su firma (CMS).')
+            ts_cms = None
+
+        # TST en DSS /DocTimeStamp (perfil 'A'):
+        if firmante_ctx['preferencias_firma']['TST_DSS'] == True:
+            try:
+                ts_dss = signers.PdfTimeStamper(timestamper=tls_transport.get_timestamper(tsa_endpoint=TSA['endpoints'][0]))
+            except Exception:
+                logger.warning("No se pudo configurar timestamp en PDF (/DocTimeStamp). Continuando sin el...")
+                ts_dss = None
+            else:
+                print(f"     • Se utilizará TSA '{TSA['endpoints'][0]}' para timestamping en PDF (/DocTimeStamp).")
+                perfil_firma_propuesto.append('A')
+        else:
+            print('     • NO se utilizará TSA para timestamping en PDF (/DocTimeStamp).')
+            ts_dss = None
+
+        # Instanciación de objeto "firmante de pdf" en la clase encapsuladora PdfSigner con las opciones acumuladas.
+        try:
+            FIRMANTE = signers.PdfSigner(
+                signer=firmante_ctx['firmante_simple'],
+                signature_meta=firmante_ctx['firmante_simple_sigmeta'],
+                timestamper=ts_cms,
+                new_field_spec=firmante_ctx['campo_visual'],
             )
-            if ocsp_x509_dss:
-                DSS_CERTS += ocsp_x509_dss
-            if perfil_ocsp:
-                PERFIL_FIRMA_INICIAL[0] = perfil_ocsp[0]
+        except Exception as e:
+            print(e)
+            exit()
 
-            # Por más pocho que sea el hardware 150 firmas en perfil alto no sobrepasan los 5 minutos, sería a partir
-            # de 150 pdfs a firmar que empezariamos a usar la comparación por tiempo en cada iteración de firma para
-            # evaluar si el tiempo transcurrido bajo perfil L sobrepasa 295 segundos (casi 5min) y así realizar una
-            # nueva petición OCSP y continuar firmando bajo la misma lógica ordenada.
-            if L_PDFS > 150:
-                TIMER_OCSP = True
-                techo_ocsp = 295
-                ocsp_time = perf_counter()
+        # Mensajes últimos de desglose y prompt de confirmación.
+        print(f"\n[{Fore.LIGHTGREEN_EX}OK{Fore.WHITE}] Contexto operacional listo.\n")
+        logger.info("Firmante: %s", x509.leer_subject_simple(cert=FIRMANTE.signer.signing_cert))
+        logger.info("Perfil de firma propuesto: PAdES-B-%s", ''.join(perfil_firma_propuesto))
+        #print(f'\n• Documentos a firmar: {PDFs}')
+        #print(pki.leer_ca_chain_simple(chain_path=CA_CHAIN_SUBJECT))
+        if firmante_ctx['preferencias_firma']['OCSP'] == True:
+            print(f"\n{config.MENSAJES_MISC['msj_desfase_temporal']}")
 
-        # Bucle de firma sobre los PDFs.
-        for i in PDFs: # tuplas de 3 elementos: ("Path del PDF", "bool de cifrado", "int de siguiente firma disponible").
-            if TIMER_OCSP:
-                # si se firman menos de 150 pdfs: if false, no baja rendimiento.
-                # si se firman más de 150 pdfs: if true, se compara tiempo en cada iteración para gestionar a mano el nextUpdate.
-                if (perf_counter() - ocsp_time) > techo_ocsp:
-                    print()
-                    PERFIL_FIRMA_INICIAL = ['B']
-                    logger.warning("ATENCIÓN!, Se ha sobrepasado el techo práctico de tiempo para seguir usando la misma respuesta OCSP.")
-                    logger.warning("Se realizará una NUEVA petición OCSP a los endpoints por defecto para corroborar nuevamente el estado del firmante.\n")
-                    sleep(3)
+        core_utils.continuar_salir(msj='\n¿Proceder y firmar? (y/n): ')
 
-                    logger.info("Iniciando nuevamente validación externa mediante 'Online Certificate Status Protocol (OCSP)'.")
-                    perfil_ocsp, OCSP_RESPONSES, ocsp_x509_dss = manejador_ocsp(
-                        firmante_crt=DSS_CERTS[0],
-                        firmante_issuer_crt=DSS_CERTS[1],
-                        endpoints=OCSP_URIS,
-                        pki_ctx=BANXICO_PKI_CTX,
-                        dir_save=DIR_SESION_FIRMA
-                    )
-                    if ocsp_x509_dss: # volvemos a llenar DSS_CERTS: el firmante no cambia y quita N certs del responder anterior.
-                        DSS_CERTS = [FIRMANTE.signer.signing_cert]
-                        for j in FIRMANTE.signer.cert_registry.certs.values():
-                            DSS_CERTS.append(j)
-                        DSS_CERTS += ocsp_x509_dss
-                    if perfil_ocsp:
-                        PERFIL_FIRMA_INICIAL[0] = perfil_ocsp[0]
-                        techo_ocsp += 298
-                    else:
-                        TIMER_OCSP = False
-                    print()
+        # Lógica de sesión de firma.
+        print()
+        logger.info("Iniciando sesión de firma.")
 
-            pdf = i[0]
-            es_pdf_cifrado = i[1]
+        dir_sesion_firma.mkdir(parents=True)
+        core_utils.guardar_archivos(f'{dir_sesion_firma}/firmante_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=firmante_ctx['firmante_ca_chain']).encode('utf-8'))
+        core_utils.guardar_archivos(
+            f'{dir_sesion_firma}/firmante_info', 'pem',
+            firmante_x509=pem.armor(der_bytes=FIRMANTE.signer.signing_cert.dump(), type_name="CERTIFICATE"),
+            firmante_cadena=pki.hacer_cadena_pem(chain_path=firmante_ctx['firmante_ca_chain'], elementos="no_subject")
+        )
+        ini_time = perf_counter()
+    
+        with registros.modded_logs(target_logger=logger, fmt="[%(levelname)s] (%(asctime)s) %(message)s"):
+            if firmante_ctx['preferencias_firma']['OCSP'] == True:
+                print()
+                logger.info("Iniciando validación externa mediante 'Online Certificate Status Protocol (OCSP)'.")
+                perfil_ocsp, ocsp_responses, ocsp_x509_dss = await manejador_ocsp(
+                    firmante_crt=dss_certs[0],
+                    firmante_issuer_crt=dss_certs[1],
+                    dir_save=dir_sesion_firma
+                )
+                if ocsp_x509_dss:
+                    dss_certs += ocsp_x509_dss # [end, inter, inter, ..., ocsp, inter, inter, ...]
+                if perfil_ocsp:
+                    perfil_firma_final[0] = perfil_ocsp[0]
 
-            # Manejo diferenciado entre indice de lista e indice mostrado en terminal
-            nextsig_interno = i[2]
-            nextsig_visual = i[2] + 1
-            if nextsig_interno == 0:
-                firmas_previas = 0
-            else:
-                firmas_previas = nextsig_visual - 1
+                # Por más pocho que sea el hardware 150 firmas en perfil alto no sobrepasan los 5 minutos, sería a partir
+                # de 150 pdfs a firmar que empezariamos a usar la comparación por tiempo en cada iteración de firma para
+                # evaluar si el tiempo transcurrido bajo perfil L sobrepasa 295 segundos (casi 5min) y así realizar una
+                # nueva petición OCSP y continuar firmando bajo la misma lógica ordenada.
+                if l_pdfs > 150:
+                    timer_ocsp = True
+                    techo_ocsp = 295
+                    ocsp_time = perf_counter()
 
-            nombre_pdf_firmado = f"{DIR_SESION_FIRMA}/{pdf.stem}_FIRMADO{pdf.suffix}"
-            perfil_firma_individual = PERFIL_FIRMA_INICIAL
-            stream_aux = BytesIO()
-            rev = BytesIO()
+            # Bucle de firma sobre los PDFs.
+            for idx, i in enumerate(iterable=PDFs, start=1): # tuplas de 3 elementos: ("Path del PDF", "bool de cifrado", "int de siguiente firma disponible").
+                if timer_ocsp:
+                    # si se firman menos de 150 pdfs: if false, no baja rendimiento.
+                    # si se firman más de 150 pdfs: if true, se compara tiempo en cada iteración para gestionar a mano el nextUpdate.
+                    if (perf_counter() - ocsp_time) > techo_ocsp:
+                        perfil_firma_final = ['B']
+                        print()
+                        logger.warning("ATENCIÓN!, Se ha sobrepasado el techo práctico de tiempo para seguir usando la misma respuesta OCSP.")
+                        logger.warning("Se realizará una NUEVA petición OCSP a los endpoints por defecto para corroborar nuevamente el estado del firmante.\n")
+                        sleep(3)
 
-            print()
-            logger.info("Abriendo PDF: '%s'", pdf.name)
-
-            if firmas_previas > 0:
-                logger.info("El PDF posee firmas previas: %s", firmas_previas)
-            else:
-                logger.info("El PDF no posee ninguna firma previa.")
-            logger.info("Su firma se incrustará en posición: %s", nextsig_visual)
-
-            with open(pdf, 'rb') as f_in:
-                original = IncrementalPdfFileWriter(f_in)
-                if es_pdf_cifrado:
-                    original.encrypt(user_pwd="")
-                    # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions".
-
-                try:
-                    logger.info("Firmando...")
-                    FIRMANTE.sign_pdf(
-                        pdf_out=original,
-                        output=stream_aux,
-                        existing_fields_only=False
-                    )
-                except TimestampRequestError as e: # TODO: necesito excepción especifica para cuando la TSA no responde.
-                    logger.error('La TSA no ha respondido! (%s)', e)
-                    if core_utils.continuar_salir(msj="¿Omitir éste PDF y continuar firmando o salir? (y/n): "):
-                        continue
-                except Exception as e: # TODO: necesito excepción especifica para cuando la TSA no responde.
-                    logger.warning('Error al firmar PDF "%s": %s', pdf.name, e)
-                    if core_utils.continuar_salir(msj="¿Omitir éste PDF y continuar firmando o salir? (y/n): "):
-                        continue
-                else:
-                    logger.info("Firmado.")
-
-                    # Retorno del TST de contrafirma en un CMS de pefiles 'T': Se asume que 1 firmante
-                    # individual crea 1 CMS con 1 SignerInfo, y si hay timestamping; 1 solo TST en sus
-                    # contrafirmas, por lo que no debería ser del todo salvaje numerar en 0 los parametros
-                    # signer= y contrafirma= dado que esa es la posición esperada del TST en su CMS.
-                    if FIRMANTE.default_timestamper:
-                        TST_CMS = pkey.extraer_tst_signer(cms=cms_bytes, signer=0, contrafirma=0)
-                        perfil_firma_individual.append('T')
-                        logger.info("Perfil 'Timestamp (T)' completo (TST en CMS).")
-                    
-                    # Bifuración con 'stream_aux': La firma escribe en stream_aux, mientras todavia es BytesIO
-                    # se retornan los bytes del CMS de la firma apenas hecha para obtener su 'Validation Related
-                    # Information (VRI)' e interactuar correctamente con DSS adelante.
-                    cms_bytes, vri = pdf_utils.extraer_cms_y_vri(stream=stream_aux, indice=nextsig_interno, usa_cifrado=es_pdf_cifrado)
-                    logger.info("Entrada VRI de la firma %s: %s", nextsig_visual, vri)
-
-                    # Contexto DSS: Retomamos el BytesIO de stream_aux, instanciamos como IncrementalPdfFileWriter()
-                    # y agregamos contexto de validación en su DSS: Respuestas OCSP, Certs de DSS y CMS del firmante
-                    # para relacionar el contexto con su entrada VRI.
-                    firmado = IncrementalPdfFileWriter(stream_aux)
-                    if es_pdf_cifrado:
-                        firmado.encrypt(user_pwd="") # TODO: no me agrada, asumimos que el cifrado es solo de "password permissions"
-
-                    logger.info("Añadiendo contexto de validación en 'Document Security Store (DSS)'...")
-                    dss = DocumentSecurityStore.supply_dss_in_writer(
-                        pdf_out=firmado,            # firmado + contexto dss
-
-                        sig_contents=cms_bytes,     # relaciona la VRI en base al CMS en bytes, literalmente: hashlib.sha1(sig_contents).digest().hex().upper()
-                        ocsps=OCSP_RESPONSES,       # Lista de objetos respuesta asn1crypto.ocsp.OCSPResponse
-                        certs=DSS_CERTS,            # lista de objetos asn1crypto.x509.Certificate (firmante, inter, reponder, inter) (sin raices)
-                        crls=None                   # CRLs si se tuviesen (de momento queda None hardcodeado)
-                    )
-                    logger.info("Contexto de validación en DSS añadido.")
-
-                    # TST para perfil A
-                    if DSS_TIMESTAMPER:
-                        logger.info("Añadiendo TST en '/DocTimeStamp'...")
-                        DSS_TIMESTAMPER.timestamp_pdf(
-                            pdf_out=firmado,                    # entra 'IncrementalPdfFileWriter()'
-                            md_algorithm=DSS_TIMESTAMP_HASH,
-
-                            output=rev                          # retorna 'BytesIO'
+                        logger.info("Iniciando nuevamente validación externa mediante 'Online Certificate Status Protocol (OCSP)'.")
+                        perfil_ocsp, ocsp_responses, ocsp_x509_dss = await manejador_ocsp(
+                            firmante_crt=dss_certs[0],
+                            firmante_issuer_crt=dss_certs[1],
+                            dir_save=dir_sesion_firma
                         )
+                        if ocsp_x509_dss: # volvemos a llenar dss_certs con los x509 base de firmante + los del responder (si los hay)
+                            dss_certs = firmante_ctx["subject_certificates"] + ocsp_x509_dss
+                        else:
+                            dss_certs = firmante_ctx["subject_certificates"]
+                        if perfil_ocsp:
+                            perfil_firma_final[0] = perfil_ocsp[0]
+                            techo_ocsp += 298
+                        else:
+                            timer_ocsp = False
+                        print()
 
-                        # Retorno del TST de perfiles A: parece salvaje pero para cada sesión de firma la
-                        # última firma hecha siempre es el TST de /DocTimeStamp, y dado que este TST no es
-                        # una contrafirma (cms anidado), se puede cargar tal cual el PDF como PdfFileReader()
-                        # para acceder directo a las "embedded_signatures" tal cual las almacena pyhanko,
-                        # con cero-padding al final como en el CMS del firmante.
-                        TST_DSS = PdfFileReader(rev).embedded_timestamp_signatures[-1].pkcs7_content
+                pdf = i[0]
+                es_pdf_cifrado = i[1]
 
-                        logger.info("Perfil 'Archival (A)' completo (TST en /DocTimeStamp).")
-                        perfil_firma_individual.append('A')
+                # Manejo diferenciado entre indice de lista e indice mostrado en terminal
+                nextsig_interno = i[2]
+                nextsig_visual = i[2] + 1
+                if nextsig_interno == 0:
+                    firmas_previas = 0
+                else:
+                    firmas_previas = nextsig_visual - 1
 
+                nombre_pdf_firmado = f"{dir_sesion_firma}/{pdf.stem}_FIRMADO{pdf.suffix}"
+                perfil_firma_individual = perfil_firma_final.copy() # objeto nuevo, 1 nivel de profundidad copiado, sin referencias compartidas
+                stream_aux = BytesIO()
+                rev = BytesIO()
+
+                print()
+                logger.info("(%s) Abriendo PDF: '%s'", idx, pdf.name)
+
+                if firmas_previas > 0:
+                    logger.info("El PDF posee firmas previas: %s", firmas_previas)
+                else:
+                    logger.info("El PDF no posee ninguna firma previa.")
+                logger.info("Su firma se incrustará en posición: %s", nextsig_visual)
+
+                with open(pdf, 'rb') as f_in:
+                    original = IncrementalPdfFileWriter(f_in)
+                    if es_pdf_cifrado:
+                        original.encrypt(user_pwd="")
+                        # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions".
+
+                    try:
+                        logger.info("Firmando...")
+                        await FIRMANTE.async_sign_pdf(
+                            pdf_out=original,
+                            output=stream_aux,
+                            existing_fields_only=False
+                        )
+                    except TimestampRequestError as e: # TODO: necesito excepción especifica para cuando la TSA no responde.
+                        logger.error('La TSA no ha respondido! (%s)', e)
+                        if core_utils.continuar_salir(msj="¿Omitir éste PDF y continuar firmando o salir? (y/n): "):
+                            continue
+                    except Exception as e: # TODO: necesito excepción especifica para cuando la TSA no responde.
+                        logger.warning('Error al firmar PDF "%s": %s', pdf.name, e)
+                        if core_utils.continuar_salir(msj="¿Omitir éste PDF y continuar firmando o salir? (y/n): "):
+                            continue
                     else:
-                        firmado.write(rev)
-                        # 'rev' se entiende como la revisión final del PDF, lo que se escribe al archivo
-                        # final. Si hay TST en DSS el método ".timestamp_pdf()" hace internamente la
-                        # escritura a rev para incluír el TST en /DocTimeStamp. Si no se usa perfil 'A',
-                        # se escribe a rev desde el método ".write()" de los 'IncrementalPdfFileWriter'
-                        # desde 'firmado' (que sería "la versión más completa" del pdf que no usa TST
-                        # en DSS).
-                        # 
-                        # Cualquiera que sea el caso, rev se manejará como 'BytesIO' para escribir en él,
-                        # leer el historial de firmas antes de cerrar y finalmente pasarlo a bytes para
-                        # escribirlo como el archivo PDF final firmado.
+                        logger.info("Firmado.")
+                        
+                        # Bifuración con 'stream_aux': La firma escribe en stream_aux, mientras todavia es BytesIO
+                        # se retornan los bytes del CMS de la firma apenas hecha para obtener su 'Validation Related
+                        # Information (VRI)' e interactuar correctamente con DSS adelante.
+                        cms_bytes, vri = pdf_utils.extraer_cms_y_vri(stream=stream_aux, indice=nextsig_interno, usa_cifrado=es_pdf_cifrado)
+                        logger.info("Entrada VRI de la firma %s: %s", nextsig_visual, vri)
 
-                    logger.info("Firma 'PAdES-B-%s' efectuada correctamente.", ''.join(perfil_firma_individual))
+                        # Retorno del TST de contrafirma en un CMS de pefiles 'T': Se asume que 1 firmante
+                        # individual crea 1 CMS con 1 SignerInfo, y si hay timestamping; 1 solo TST en sus
+                        # contrafirmas, por lo que no debería ser del todo salvaje numerar en 0 los parametros
+                        # signer= y contrafirma= dado que esa es la posición esperada del TST en su CMS.
+                        #if FIRMANTE.default_timestamper:
+                        if FIRMANTE.default_timestamper:
+                            tst_cms = cripto.extraer_tst_cms(cms=cms_bytes, signer=0, contrafirma=0)
+                            perfil_firma_individual.append('T')
+                            logger.info("Perfil 'Timestamp (T)' completo (TST en CMS).")
 
-                    # Conteo visual de firmas.
-                    firmas_totales = pdf_utils.leer_firmas_pdf(pdf_input=rev, usa_cifrado=es_pdf_cifrado)
-                    if firmas_totales:
-                        logger.info("========== HISTORIAL DE FIRMAS ==========")
-                        for n, j in enumerate(iterable=firmas_totales, start=1):
-                            logger.info("%s. %s", n, j)
-                        logger.info("========== HISTORIAL DE FIRMAS ==========")
+                        # Contexto DSS: Retomamos el BytesIO de stream_aux, instanciamos como IncrementalPdfFileWriter()
+                        # y agregamos contexto de validación en su DSS: Respuestas OCSP, Certs de DSS y CMS del firmante
+                        # para relacionar el contexto con su entrada VRI.
+                        firmado = IncrementalPdfFileWriter(stream_aux)
+                        if es_pdf_cifrado:
+                            firmado.encrypt(user_pwd="") # TODO: no me agrada, asumimos que el cifrado es solo de "password permissions"
 
-                    # Guardado de archivos de cada iteración.
-                    core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'p7s', **{f"{pdf.name}.CMS":cms_bytes})
-                    with open(nombre_pdf_firmado, 'wb') as f_out:
-                        f_out.write(rev.getvalue())
+                        logger.info("Añadiendo contexto de validación en 'Document Security Store (DSS)'...")
+                        dss = DocumentSecurityStore.supply_dss_in_writer(
+                            pdf_out=firmado,            # firmado + contexto dss
 
-                    if TST_CMS:
-                        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'der', **{f"{pdf.name}.TST-Firma":TST_CMS})
-                    if TST_DSS:
-                        core_utils.guardar_archivos(f'{DIR_SESION_FIRMA}/(complemento) archivos separados', 'der', **{f"{pdf.name}.TST-PDF":TST_DSS})
+                            sig_contents=cms_bytes,     # relaciona la VRI en base al CMS en bytes, literalmente: hashlib.sha1(sig_contents).digest().hex().upper()
+                            ocsps=ocsp_responses,       # Lista de objetos respuesta asn1crypto.ocsp.OCSPResponse
+                            certs=dss_certs,            # lista de objetos asn1crypto.x509.Certificate (firmante, inter, reponder, inter) (sin raices)
+                            crls=None                   # CRLs si se tuviesen (de momento queda None hardcodeado)
+                        )
+                        logger.info("Contexto de validación en DSS añadido.")
 
-                    logger.info("Cerrando PDF: '%s'", pdf.name)
+                        # TST para perfil A
+                        if ts_dss:
+                            try:
+                                logger.info("Añadiendo TST en '/DocTimeStamp'...")
+                                await ts_dss.async_timestamp_pdf(
+                                    pdf_out=firmado,                    # entra 'IncrementalPdfFileWriter()'
+                                    md_algorithm=TSA["HASH"],
+                                    output=rev                          # retorna 'BytesIO'
+                                )
+                            except TimestampRequestError as e:
+                                logger.error('La TSA no ha respondido! (%s)', e)
+                                if core_utils.continuar_salir(msj="¿Omitir éste PDF y continuar firmando o salir? (y/n): "):
+                                    continue
+                            except Exception as e:
+                                logger.warning('Error al firmar PDF "%s": %s', pdf.name, e)
+                                if core_utils.continuar_salir(msj="¿Omitir éste PDF y continuar firmando o salir? (y/n): "):
+                                    continue
+                            else:
+                                # Retorno del TST de perfiles A: parece salvaje pero para cada sesión de firma la
+                                # última firma hecha siempre es el TST de /DocTimeStamp, y dado que este TST no es
+                                # una contrafirma (cms anidado), se puede cargar tal cual el PDF como PdfFileReader()
+                                # para acceder directo a las "embedded_signatures" tal cual las almacena pyhanko,
+                                # con cero-padding al final como en el CMS del firmante.
+                                tst_dss = PdfFileReader(rev).embedded_timestamp_signatures[-1].pkcs7_content
+                                logger.info("Perfil 'Archival (A)' completo (TST en /DocTimeStamp).")
+                                perfil_firma_individual.append('A')
+                        else:
+                            firmado.write(rev)
+                            # 'rev' se entiende como la revisión final del PDF, lo que se escribe al archivo
+                            # final. Si hay TST en DSS el método ".timestamp_pdf()" hace internamente la
+                            # escritura a rev para incluír el TST en /DocTimeStamp. Si no se usa perfil 'A',
+                            # se escribe a rev desde el método ".write()" de los 'IncrementalPdfFileWriter'
+                            # desde 'firmado' (que sería "la versión más completa" del pdf que no usa TST
+                            # en DSS).
+                            # 
+                            # Cualquiera que sea el caso, rev se manejará como 'BytesIO' para escribir en él,
+                            # leer el historial de firmas antes de cerrar y finalmente pasarlo a bytes para
+                            # escribirlo como el archivo PDF final firmado.
+
+                        logger.info("Firma 'PAdES-B-%s' efectuada correctamente.", ''.join(perfil_firma_individual))
+
+                        # Conteo visual de firmas.
+                        firmas_totales = pdf_utils.leer_firmas_pdf(pdf_input=rev, usa_cifrado=es_pdf_cifrado)
+                        if firmas_totales:
+                            logger.info("========== HISTORIAL DE FIRMAS ==========")
+                            for n, j in enumerate(iterable=firmas_totales, start=1):
+                                logger.info("%s. %s", n, j)
+                            logger.info("========== HISTORIAL DE FIRMAS ==========")
+
+                        # Guardado de archivos de cada iteración.
+                        core_utils.guardar_archivos(f'{dir_sesion_firma}/(complemento) archivos separados', 'p7s', **{f"{pdf.name}.__CMS":cms_bytes})
+                        with open(nombre_pdf_firmado, 'wb') as f_out:
+                            f_out.write(rev.getvalue())
+
+                        if tst_cms:
+                            core_utils.guardar_archivos(f'{dir_sesion_firma}/(complemento) archivos separados', 'der', **{f"{pdf.name}.__TST_Firma":tst_cms})
+                        if tst_dss:
+                            core_utils.guardar_archivos(f'{dir_sesion_firma}/(complemento) archivos separados', 'der', **{f"{pdf.name}.__TST_PDF":tst_dss})
+
+                        logger.info("Cerrando PDF: '%s'", pdf.name)
 
     # Wrap up y resumen de sesión.
-    if Path(f'{DIR_SESION_FIRMA}/(complemento) archivos separados').is_dir():
-        with open(f'{DIR_SESION_FIRMA}/(complemento) archivos separados/0disclaimer.txt', 'w') as f:
+    if Path(f'{dir_sesion_firma}/(complemento) archivos separados').is_dir():
+        with open(f'{dir_sesion_firma}/(complemento) archivos separados/0disclaimer.txt', 'w') as f:
             f.write(config.MENSAJES_MISC['disclaimer_firmas_separadas'])
 
     end_time = f"{(perf_counter() - ini_time):.3f}"
@@ -671,20 +665,17 @@ def firma(firmante_ctx: dict, pdfs: list) -> None:
     print(f"   • Duración: {end_time}s")
     print(f"   • Total de Firmas: {len(PDFs)}")
     print(f"   • Fecha: {datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")} (UTC)")
-    print(f"   • Ruta Archivos: '{Path(DIR_SESION_FIRMA).absolute()}'", end="")
+    print(f"   • Ruta Archivos: '{Path(dir_sesion_firma).absolute()}'", end="")
     return
 
 @wrappers.salida_limpia()
 def hacer_firma():
     try:
-        xdg_config.load_global()
-        PRINCIPAL = usuarios.load_principal_conf()
-
-        logger.info("Usando configuración por defecto (%s).", usuarios.load_state_users()['principal'])
-
         # 1. Carga inicial y prefirma.
         # Evaluar que el material a firmar sea viable antes de cualquier otra cosa, evidentemente (¬_¬").
-        pdf_ruta_base = Path(xdg_config.GLOBAL_CONFIG['pdf_ruta_base'])
+        logger.info("Usando configuración por defecto (%s).", usuarios.load_state_users()['principal'])
+        PRINCIPAL = usuarios.load_principal_conf()
+        pdf_ruta_base = Path(PDF_RUTA_BASE)
         pdfs = []
         normalizados = None
 
@@ -706,20 +697,14 @@ def hacer_firma():
         # 2. Instanciación de contexto PKI.
         # Si el material a firmar es viable (independientemente de cuanto sea) se instancia el contexto
         # PKI en el que operará el firmante, y se definirá el contexto/configuración de firma del firmante.
-        pki_ctx = pki.get_validation_context(
-            trust_roots=xdg_config.GLOBAL_CONFIG['PKI']['trust_roots'],
-            intermediate_cas=xdg_config.GLOBAL_CONFIG['PKI']['intermediate_cas'],
-        )
-        firmante_ctx = contexto(
-            firmante_input=PRINCIPAL,
-            pki_ctx=pki_ctx
-        )
+        firmante_ctx = contexto(firmante_input=PRINCIPAL)
         if not firmante_ctx:
             return False
 
         # 3. Si existe firmante instanciado en su contexto PKI y con contexto de firma; se inicia el
         # procedimiento de firma real sobre el material.
-        firma(pdfs=pdfs, firmante_ctx=firmante_ctx)
+        asyncio.run(firma(firmante_ctx=firmante_ctx, pdfs=pdfs))
+        #firma(pdfs=pdfs, firmante_ctx=firmante_ctx)
 
     # cleanup para archivos normalizados estilo trap ... EXIT en bash
     finally:
