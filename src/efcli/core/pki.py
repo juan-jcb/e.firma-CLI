@@ -93,88 +93,6 @@ def get_validation_context(trust_roots: str, intermediate_cas: str) -> Validatio
 
     return pki_ctx
 
-def get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="firmante") -> ValidationPath | None:
-    """
-    Obtén la cadena de confianza completa en base a un x509.
-    
-    :param cert:
-        Objeto `asn1crypto.x509.Certificate` del cual se obtendrá su
-        cadena de confianza completa.
-
-    :param tipo:
-        `str` para definir el "tipo de entidad" según su `key usage` y
-        `extended key usage` ej: "firmante" para FIEL o SELLO (digital_signature),
-        "ocsp_responder" para servidores OCSP.
-
-    :param pki_ctx:
-        Objeto `ValidationContext` que define contexto de la PKI bajo la
-        que se reconstruirá la cadena de confianza de `cert`.
-
-    :return:
-        Objeto `ValidationPath` (iterable e indexable) con la cadena de
-        confianza completa en estructura predecible: [root, inter, ..., user]
-        ordenado desde el trust anchor (raíz) hasta el certificado sujeto.
-    """
-
-    try:
-        # certs de firmantes en general (FIEL o SELLO)
-        if tipo == "firmante":
-            chain_path = asyncio.run(
-                CertificateValidator(
-                    end_entity_cert=cert,
-                    validation_context=pki_ctx,
-                ).async_validate_usage({"digital_signature"})
-            )
-        # certs de servidores OCSP
-        elif tipo == "ocsp_responder":
-            chain_path = asyncio.run(
-                CertificateValidator(
-                    end_entity_cert=cert,
-                    validation_context=pki_ctx,
-                ).async_validate_usage(key_usage={}, extended_key_usage={"ocsp_signing"})
-            )
-
-    # pyhanko_certvalidator.errors.ExpiredError: The path could not be validated because the end-entity certificate expired 2026-04-23 17:13:16Z
-    except ExpiredError as e:
-        logger.error("Certificado X.509 EXPIRADO: %s", e.expired_dt.strftime("%Y-%m-%dT%H:%M:%SZ"))
-        return None
-    except Exception as e:
-        logger.error(e)
-        return None
-    else:
-        return chain_path
-
-async def async_get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="firmante") -> ValidationPath | None:
-    """
-    Misma función de construcción de ValidationPath pero asumiendo que ya
-    existe un bucle de eventos de asyncio.
-
-    Efectivamente le copiaré a pyhanko con su "sync wrapper over async core"
-    donde el código async es la única fuente de verdad, y se decide caso por
-    caso según si el llamador tiene un bucle de eventos activo o no cuál de
-    las dos funciones usar.
-    """
-    try:
-        validator = CertificateValidator(
-            end_entity_cert=cert,
-            validation_context=pki_ctx,
-        )
-        # certs de firmantes en general (FIEL o SELLO)
-        if tipo == "firmante":
-            chain_path = await validator.async_validate_usage({"digital_signature"})
-        # certs de servidores OCSP
-        elif tipo == "ocsp_responder":
-            chain_path = await validator.async_validate_usage(key_usage={}, extended_key_usage={"ocsp_signing"})
-
-    except ExpiredError as e:
-        logger.error("Certificado X.509 EXPIRADO: %s", e.expired_dt.strftime("%Y-%m-%dT%H:%M:%SZ"))
-        return None
-    except Exception as e:
-        logger.error(e)
-        return None
-    else:
-        return chain_path
-
 def es_cert_banxico(cert: asn1_x509.Certificate) -> bool:
     """
     Determina si un x509 pertenece a la PKI de Banxico.
@@ -198,21 +116,105 @@ def es_cert_banxico(cert: asn1_x509.Certificate) -> bool:
         return False
     return True
 
+def get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="firmante") -> ValidationPath | None:
+    """
+    Obtén la cadena de confianza completa en base a un x509.
+    
+    :param cert:
+        Objeto `asn1crypto.x509.Certificate` del cual se obtendrá su
+        cadena de confianza completa.
+
+    :param tipo:
+        `str` para definir el "tipo de entidad" según su `key usage` y
+        `extended key usage` ej: "firmante" para FIEL o SELLO (digital_signature),
+        "ocsp_responder" para servidores OCSP.
+
+    :param pki_ctx:
+        Objeto `ValidationContext` que define contexto de la PKI bajo la
+        que se reconstruirá la cadena de confianza de `cert`.
+
+    :return ValidationPath:
+        Con la cadena de confianza completa en estructura predecible:
+        `[root, inter, inter, ..., user]` ordenado desde el trust anchor
+        (raíz) hasta el certificado sujeto.
+    """
+
+    try:
+        # certs de firmantes en general (FIEL o SELLO)
+        if tipo == "firmante":
+            chain_path = asyncio.run(
+                CertificateValidator(
+                    end_entity_cert=cert,
+                    validation_context=pki_ctx,
+                ).async_validate_usage({"digital_signature"})
+            )
+        # certs de servidores OCSP
+        elif tipo == "ocsp_responder":
+            chain_path = asyncio.run(
+                CertificateValidator(
+                    end_entity_cert=cert,
+                    validation_context=pki_ctx,
+                ).async_validate_usage(key_usage={}, extended_key_usage={"ocsp_signing"})
+            )
+
+    except ExpiredError as e:
+        logger.error("Certificado X.509 EXPIRADO: %s", e.expired_dt.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        return None
+    except Exception as e:
+        logger.error(e)
+        return None
+    else:
+        return chain_path
+
+async def async_get_ca_chain(cert: asn1_x509.Certificate, pki_ctx: ValidationContext, tipo="firmante") -> ValidationPath | None:
+    """
+    Obtén la cadena de confianza completa en base a un x509.
+
+    Es la misma función de construcción de ValidationPath pero
+    asumiendo que ya existe un bucle de eventos de asyncio.
+
+    Efectivamente le copiaré a pyhanko con su "sync wrapper
+    over async core" donde el código async es la única fuente
+    de verdad, y se decide caso por caso según si el llamador
+    tiene un bucle de eventos activo o no cuál de las dos
+    funciones usar.
+    """
+    try:
+        validator = CertificateValidator(
+            end_entity_cert=cert,
+            validation_context=pki_ctx,
+        )
+        if tipo == "firmante":
+            chain_path = await validator.async_validate_usage({"digital_signature"})
+        elif tipo == "ocsp_responder":
+            chain_path = await validator.async_validate_usage(key_usage={}, extended_key_usage={"ocsp_signing"})
+
+    except ExpiredError as e:
+        logger.error("Certificado X.509 EXPIRADO: %s", e.expired_dt.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        return None
+    except Exception as e:
+        logger.error(e)
+        return None
+    else:
+        return chain_path
+
 def hacer_cadena_pem(chain_path: ValidationPath, elementos: str = "full_chain") -> bytes:
     """
-    Función simple para transformar un objeto `ValidationPath` a una secuencia
-    de ascii bytes en estructura PEM. Útil para castear a `str` e imprimir o
+    Transformar un objeto `ValidationPath` a una secuencia de bytes
+    ascii en estructura PEM. Útil para castear a `str` e imprimir o
     para escribir `bytes` directamente en archivo.
 
     :param chain_path:
-        Objeto `ValidationPath` con la cadena completa que se serializará a PEM.
+        Objeto `ValidationPath` con la cadena completa que se
+        serializará a PEM.
     
     :param elementos:
-        `str` para indicar que elementos excluír (o no) en la secuencia resultante.
-        Para excluír la end-entity: "no_subject". Por defecto: "full_chain".
+        `str` para indicar que elementos excluír (o no) en la secuencia
+        resultante. Para excluír la end-entity: "no_subject".
+        Por defecto: "full_chain".
 
-    :return:
-        `bytes` ascii de la cadena en PEM estilo bundle.
+    :return bytes:
+        `bytes` ascii de la cadena en PEM en estilo bundle.
     """
 
     if elementos == "no_subject":
@@ -230,8 +232,9 @@ def hacer_cadena_pem(chain_path: ValidationPath, elementos: str = "full_chain") 
 
 def leer_ca_chain_simple(chain_path: ValidationPath) -> str:
     """
-    Función simple para leer y almacenar en variable `str` los contenidos
-    más relevantes de una cadena de confianza completa en orden comprensible.
+    Parseo simple de los contenidos más relevantes de una
+    cadena de confianza completa en orden comprensible para
+    imprimir o escribir.
     """
     longitud_cadena = range(0, len(chain_path))
     entidades = {

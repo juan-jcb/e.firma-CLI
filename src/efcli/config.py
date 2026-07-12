@@ -10,6 +10,29 @@ PKI_ASSETS = (
     PACKAGE_DIR / "assets" / "banxico_pki" / "sat_intermedia_bundle.pem",
 )
 
+# Plantilla en caso de formalizar esta herramienta.
+#   User-Agent: <NombreProducto>/<Versión> (RFCXXXX; <Plataforma>) [+URL opcional]
+
+OCSP_CLIENT_HEADERS = {
+    "User-Agent": "OCSP-Client/1.0",
+    "Content-Type": "application/ocsp-request",
+    "Accept": "application/ocsp-response"
+}
+    #"User-Agent": "RFC6960-OCSP-Client/1.0",
+    #"User-Agent": "PKI Validation Client/2.4 (OCSP; Windows 11; x64)",
+    #"User-Agent": "EFCLI-OCSP/0.1.0 (RFC6960; Linux x86_64)"
+
+TIMESTAMPING_CLIENT_HEADERS = {
+    "User-Agent": "TSP-Client/1.0",
+    "Content-Type": "application/timestamp-query",
+    "Accept": "application/timestamp-reply",
+}
+    #"User-Agent": "RFC3161-TSP-Client/1.0",
+    #"User-Agent": "PKI TimeStamp Client/1.0",
+    #"User-Agent": "SecureTimestamp/1.0 (+https://example.com)",
+    #"User-Agent": "FirmaDigital-TSP/2.1.0 (+https://firma.example.com)",
+    #"User-Agent": EFCLI-TSP/0.1.0 (RFC3161; Linux x86_64)
+
 # Flags estáticas se evaluan en conmutador, las de argumento en sintaxis post-conmutador.
 # Se mantiene la estructura en este diccionario por estetica visual.
 FLAGS = {

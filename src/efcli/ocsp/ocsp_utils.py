@@ -4,6 +4,18 @@ from cryptography.x509 import ocsp as crypto_ocsp
 from cryptography.hazmat.primitives.serialization import Encoding
 
 def coinstruir_OCSPRequest(cert_client: asn1_x509.Certificate, cert_issuer: asn1_x509.Certificate) -> asn1_ocsp.OCSPRequest:
+    """
+    Construye un objeto petición OCSP.
+
+    :param cert_client:
+        Objeto `asn1_x509.Certificate` del certificado que realizará la petición.
+    :param cert_issuer:
+        Objeto `asn1_x509.Certificate` del issuer en la petición.
+
+    :return asn1_ocsp.OCSPRequest:
+        Objeto Petición OCSP.
+    """
+
     req = asn1_ocsp.OCSPRequest({
         'tbs_request': {
             'request_list': [{
@@ -19,10 +31,29 @@ def coinstruir_OCSPRequest(cert_client: asn1_x509.Certificate, cert_issuer: asn1
 
     return req
 
+def extraer_x509_responder(der_bytes: bytes) -> asn1_x509.Certificate | None:
+    """
+    Extrae el certificado X.509 incluido en una respuesta OCSP.
+
+    :param der_bytes:
+        `bytes` en DER de la respuesta OCSP.
+
+    :return:
+        `asn1crypto.x509.Certificate` si se incluye en respuesta.
+        `None` en caso de no haberlo.
+    """
+    rsp = crypto_ocsp.load_der_ocsp_response(data=der_bytes)
+    responder_certs = rsp.certificates
+    if not responder_certs:
+        return None
+
+    responder_x509_bytes = responder_certs[0].public_bytes(encoding=Encoding.DER) # asumiendo que solo el indice 0 es el que se necesita
+    crt = asn1_x509.Certificate.load(responder_x509_bytes)
+    return crt
+
 def parse_response(der_bytes: bytes) -> tuple[bool, str]:
     """
-    Parsea una respuesta OCSP en formato estándar de OpenSSL desde
-    sus bytes en DER.
+    Parsea una respuesta OCSP con el formato estándar de OpenSSL.
 
     :param der_bytes:
         bytes en DER de la respuesta OCSP (se asumen bytes de una
@@ -112,17 +143,3 @@ def parse_response(der_bytes: bytes) -> tuple[bool, str]:
         lines.append(f"        {chunk}:")
 
     return (True, "\n".join(lines))
-
-def extraer_x509_responder(der_bytes: bytes) -> asn1_x509.Certificate | None:
-    """
-    Retorna el `asn1crypto.x509.Certificate` incluido en una
-    respuesta OCSP, o `None` en caso de no haberlo.
-    """
-    rsp = crypto_ocsp.load_der_ocsp_response(data=der_bytes)
-    responder_certs = rsp.certificates
-    if not responder_certs:
-        return None
-
-    responder_x509_bytes = responder_certs[0].public_bytes(encoding=Encoding.DER) # asumiendo que solo el indice 0 es el que se necesita
-    crt = asn1_x509.Certificate.load(responder_x509_bytes)
-    return crt

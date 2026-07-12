@@ -4,6 +4,8 @@ from functools import cache
 from pyhanko.sign.timestamps.aiohttp_client import AIOHttpTimeStamper
 from pyhanko_certvalidator.fetchers.aiohttp_fetchers import AIOHttpFetcherBackend
 
+from efcli.config import TIMESTAMPING_CLIENT_HEADERS
+
 class TransporteTLSFirmas:
     """
     Gestor de contexto: Conector async de aiohttp para gestionar el transporte
@@ -79,7 +81,7 @@ class TransporteTLSFirmas:
         la sesión/conexión TLS ya abierta. Se puede llamar varias veces
         (una por endpoint) sin coste adicional de conexión.
         """
-        return AIOHttpTimeStamper(url=tsa_endpoint, session=self.session, https=https)
+        return AIOHttpTimeStamper(url=tsa_endpoint, session=self.session, https=https, headers=TIMESTAMPING_CLIENT_HEADERS)
 
 """
 Funciones basadas en politicas de uso de TLS definidas por *intención*.

@@ -1,5 +1,4 @@
-import logging
-from io import BytesIO, BufferedReader
+import io, logging
 from pathlib import Path
 
 logging.getLogger("pikepdf").setLevel(logging.WARNING) # pikepdf gestiona su propio logger, mejor silenciar su INFO y usar solo warning
@@ -14,7 +13,7 @@ from efcli.core import cripto, x509
 
 logger = logging.getLogger(__name__)
 
-def normalizar_pdf(pdf: Path, autoconfirmar: bool) -> tuple[Path, BufferedReader, PdfFileReader, IncrementalPdfFileWriter] | None:
+def normalizar_pdf(pdf: Path, autoconfirmar: bool = False) -> tuple[Path, io.BufferedReader, PdfFileReader, IncrementalPdfFileWriter] | None:
     """
     Normaliza un PDF malformado o con errores de lectura (prompt interactivo).
     Crea un nuevo archivo PDF en base al original en su misma ruta con un sufijo
@@ -23,22 +22,28 @@ def normalizar_pdf(pdf: Path, autoconfirmar: bool) -> tuple[Path, BufferedReader
     :param pdf:
         `Path` del PDF a normalizar.
 
-    :return:
-        `tuple` con 4 elementos:
-            idx 0: `Path` del PDF nuevo normalizado con el sufijo extendido "_NORMALIZADO" en la misma ruta de `pdf`.
-            idx 1: `BufferedReader` ABIERTO del PDF nuevo normalizado (debe cerrarse explicitamente cuando ya no se requiera)
-            idx 2: `PdfFileReader` del PDF normalizado.
-            idx 3: `IncrementalPdfFileWriter` del PDF normalizado.
+    :param autoconfirmar:
+        `bool` indicativo de uso no uso del prompt interactivo de normalización.
+        `True` para omitir el prompt.
+        `False` para mostrarlo.
+
+    :return tuple:
+        Tupla con con 4 elementos:
+        idx 0: `Path` del PDF nuevo normalizado con el sufijo extendido "_NORMALIZADO" en la misma ruta de `pdf`.
+        idx 1: `BufferedReader` ABIERTO del PDF nuevo normalizado (debe cerrarse explicitamente cuando ya no se requiera)
+        idx 2: `PdfFileReader` del PDF normalizado.
+        idx 3: `IncrementalPdfFileWriter` del PDF normalizado.
     """
     if not autoconfirmar:
         logger.warning("Puede corregir creando un PDF *nuevo* con el contenido visual del original y firmar ese en su lugar.\n")
         while True:
             opcion = input(f"Reparar '{pdf.name}'? (y/n): ")
-            if opcion == 'y' :
+            if (opcion == 'y') or (opcion == ''):
                 print('Reparando...')
                 break
             elif opcion == 'n':
-                print(f"No es posible firmar en este estado. Saliendo...")
+                logger.critical("No es posible firmar en este estado.")
+                print("Saliendo...")
                 exit()
             else:
                 print('Ingrese una opción correcta.')
@@ -59,36 +64,37 @@ def normalizar_pdf(pdf: Path, autoconfirmar: bool) -> tuple[Path, BufferedReader
         normalizado_escritor = IncrementalPdfFileWriter(normalizado_stream)
         return (normalizado_path, normalizado_stream, normalizado_lector, normalizado_escritor)
 
-def leer_firmas_pdf(pdf_input: str | BytesIO, usa_cifrado: bool = False) -> list[str]:
+def leer_firmas_pdf(pdf_input: str | Path | io.BufferedReader, usa_cifrado: bool = False) -> list[str]:
     """
-    Lee las firmas incrustadas en un archivo pdf, diferenciando por tipo
-    /Sig y /DocTimeStamp.
+    Lee las firmas incrustadas en un archivo pdf, diferenciando por
+    tipo /Sig y /DocTimeStamp.
 
     :param pdf_input:
-        `BytesIO` del archivo pdf o `str` de ruta tipo OS hacia el archivo pdf.
+        `str` o `Path` de ruta tipo OS hacia el archivo pdf o
+        `io.BufferedReader` con el archivo ya abierto y legible.
 
-    :return:
-        `list` de `str` con desglose textual simple:
-            
-            ["CN \\<email\\> (Serial) (Tipo)", "..."]
+    :return list:
+        Lista con elementos `str` simple de las firmas encontradas
+        en el PDF *en el mismo orden* en que se realizaron:
         
-        de las firmas encontradas en el orden que se realizaron. Lista vacia
-        si no tiene firmas.
+        ["CN \\<email\\> (Serial) (Tipo)"]
+        
+        Lista vacia si no tiene firmas.
     """
-
-    # Normalización previa a operar solo con BytesIO
-    if isinstance(pdf_input, str):
+    if isinstance(pdf_input, str) or isinstance(pdf_input, Path):
         try:
             with open(pdf_input, "rb") as f:
-                pdf_input = BytesIO(f.read())
+                pdf_input = io.BytesIO(f.read())
         except FileNotFoundError:
             raise ValueError("Archivo no encontrado:", pdf_input)
+    elif isinstance(pdf_input, io.BufferedReader):
+        if not pdf_input.readable():
+            raise ValueError("El archivo debe estar abierto en modo lectura")
 
-    pdf_reader = PdfFileReader(pdf_input)
-
-    # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions" que se "libera" con caden vacia
+    lector = PdfFileReader(pdf_input)
     if usa_cifrado:
-        pdf_reader.decrypt(password="")
+        lector.decrypt(password="")
+        # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions" que se "libera" con caden vacia
 
     firmas = []
     firmas_etiquetadas = []
@@ -98,9 +104,9 @@ def leer_firmas_pdf(pdf_input: str | BytesIO, usa_cifrado: bool = False) -> list
     }
 
     # listas de objetos: pyhanko.sign.validation.pdf_embedded.EmbeddedPdfSignature
-    total_firmas = pdf_reader.embedded_signatures
-    regulares = pdf_reader.embedded_regular_signatures
-    incrementales = pdf_reader.embedded_timestamp_signatures
+    total_firmas = lector.embedded_signatures
+    regulares = lector.embedded_regular_signatures
+    incrementales = lector.embedded_timestamp_signatures
 
     # Re-etiquetado de las firmas hechas para saber de qué lista provienen. Se entiende "embedded_signatures"
     # como array maestro lineal y "embedded_regular_signatures", "embedded_timestamp_signatures" como particiones.
@@ -127,18 +133,20 @@ def leer_firmas_pdf(pdf_input: str | BytesIO, usa_cifrado: bool = False) -> list
 
     # caso 2. hay elementos en ambas particiones
     elif regulares and incrementales:
+        l_regulares = len(regulares)
+        l_incrementales = len(incrementales)
         idx1 = 0
         idx2 = 0
         for i in total_firmas:
             if i == regulares[idx1]:
                 firmas_etiquetadas.append((i, etiquetas[0]))
                 idx1 += 1
-                if idx1 == len(regulares): # no me agrada para evitar errores de 'sumó a un indice inexistente' pero eh, funciona ¯\_(ツ)_/¯
+                if idx1 == l_regulares: # no me agrada para evitar errores de 'sumó a un indice inexistente' pero eh, funciona ¯\_(ツ)_/¯
                     idx1 -= 1
             elif i == incrementales[idx2]:
                 firmas_etiquetadas.append((i, etiquetas[1]))
                 idx2 += 1
-                if idx2 == len(incrementales):
+                if idx2 == l_incrementales:
                     idx2 -= 1
 
     # caso 3. hay elementos en almenos 1 partición, ergo el array maestro y la partición con datos tienen
@@ -165,19 +173,18 @@ def leer_firmas_pdf(pdf_input: str | BytesIO, usa_cifrado: bool = False) -> list
 
     return firmas
 
-def extraer_cms_y_vri(stream, indice: int, usa_cifrado: bool = False) -> tuple[bytes, str]:
+def extraer_cms_y_vri(stream: io.BufferedReader, indice: int, usa_cifrado: bool = False) -> tuple[bytes, str]:
     """
-    Extraer contenedor CMS de un PDF (evidentemente ya firmado) en base al
-    orden representado en indices de firmas ya existentes en el propio PDF.
+    Extraer un contenedor CMS de un PDF (ya firmado) mediante su indice de firma.
 
     :param stream:
-        Objeto `BytesIO` del contenido de un PDF ya firmado.
+        `io.BufferedReader` del PDF ya firmado.
     
     :param indice:
         Índice de la firma a procesar (0, 1, 2, 3, 4 ...)
     
-    :return:
-        `tuple` con 2 elementos `bytes` y `str`: (cms_en_bytes, entrada_vri_str)
+    :return tuple:
+        Tupla con 2 elementos `bytes` y `str`: (cms_bytes, vri_str)
     """
     firmado_reader = PdfFileReader(stream)
     # TODO: no me termina de agradar. asumimos que el cifrado es "password permissions" que se "libera" con caden vacia

@@ -1,39 +1,37 @@
 """
-Estado del x509 del firmante mediante respuesta OCSP.
-    
-Para cada CMS, 1 entrada VRI. El DSS incluirá en /Certs el x509 del responder OCSP
-y su cadena de confianza completa (sin raíz).
+Fetchers OCSP para determinar el estado del certificado X.509 de los firmantes de efcli
+en los endpoints del SAT.
 
-Para implementaciones de firma en lote, el patrón óptimo consiste en consultar el
-OCSP una vez al inicio del proceso, verificar que nextUpdate sea posterior al tiempo
-estimado de finalización del lote e incrustar esa misma respuesta en cada firma
-generada. Si el proceso se extiende más de lo previsto y la respuesta expira,
+Para cada CMS de firma existe 1 entrada VRI en el /DSS de los PDF, el DSS incluirá
+(si es posible) en /Certs el X.509 del responder OCSP junto a su cadena de confianza
+completa (sin raíz).
+
+Dado que efcli es una implementación de firma en lote, el patrón óptimo consiste en
+consultar el OCSP 1 vez al inicio del proceso, verificar que 'nextUpdate' sea posterior
+al tiempo estimado de finalización del lote e incrustar esa misma respuesta en cada
+firma generada. Si el proceso se extiende más de lo previsto y la respuesta expira,
 se consulta nuevamente antes de continuar.
 
-Como política interna de la aplicación, un techo práctico corto (2-5 minutos) es un
-rango razonable para la mayoría de implementaciones de firma en lote.
+Los responders OCSP del SAT no incluyen el campo 'nextUpdate' en sus respuestas, pero
+sí el campo 'Produced At', por lo que éste se convierte en el único ancla temporal
+disponible para este contexto PKI, y en base a ello, como política interna de esta
+aplicación, se definirá un techo práctico de máximo medido desde ahí y con 5 minutos
+techo práctico para volver a hacer una petición OCSP.
 
-Marco regulatorio como referencia superior. Si la normativa aplicable (eIDAS, una
-política de firma nacional, el CPS del emisor del certificado) define criterios más
-estrictos o más laxos, esos prevalecen sobre cualquier heurística propia.
+No está demás aclarar que el marco regulatorio siempre será la referencia superior, si
+la normativa aplicable: eIDAS, CPS del emisor del certificado, política de firma nacional
+definem criterios más estrictos o más laxos, estos prevalecerán sobre cualquier heurística
+propia.
 
-El campo "Produced At" se convierte en el único ancla temporal disponible, por lo
-que la ventana se mide desde ahí.
 """
 
 import logging, requests, asyncio, aiohttp
 from asn1crypto import ocsp as asn1_ocsp
+
+from efcli.config import OCSP_CLIENT_HEADERS
 from efcli.core.tls import get_ocsp_tls
 
 logger = logging.getLogger(__name__)
-
-# CAs primarily care about the "Content-Type: application/ocsp-request" header and a valid binary
-# ASN.1 payload RFC 6960. Do not use standard browser-mimicking user agents (e.g., Chrome/Safari)
-# for automated OCSP traffic, as some strict responders or firewalls may flag them.
-OCSP_CLIENT_HEADERS = {
-    "User-Agent": "OCSP-Client/1.0",
-    "Content-Type": "application/ocsp-request",
-}
 
 def sync_fetch(ocsp_request: asn1_ocsp.OCSPRequest, endpoint: str) -> asn1_ocsp.OCSPResponse | None:
     """

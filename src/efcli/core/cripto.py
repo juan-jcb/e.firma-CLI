@@ -9,11 +9,11 @@ def es_pkey_cifrada(ruta_pkey: str | Path) -> tuple[bool, str]:
     DER o PEM.
 
     :param ruta_pkey:
-        `str` o `pathlib.Path` de ruta del archivo pkey.
+        `str` o `Path` de ruta del archivo pkey.
 
-    :return:
-        `tuple` para desempaquetar con `bool` de respuesta y `str` indicando
-        el tipo de encode, ej: (True, "DER"), (False, "PEM")
+    :return tuple:
+        Tupla (para desempaquetar) con 2 elementos: `bool` de respuesta
+        y `str` indicando el tipo de encode, ej: (True, "DER"), (False, "PEM")
     """
     with open(ruta_pkey, 'rb') as b:
         data = b.read()
@@ -41,10 +41,10 @@ def es_pkey_cifrada(ruta_pkey: str | Path) -> tuple[bool, str]:
 def es_passwd_de_pkey(ruta_pkey: str | Path, tipo_encode: str, passwd: str) -> bool:
     """
     Confirma si la passphrase de una determinada pkey puede descifrarla. Usar
-    después de `es_pkey_cifrada()` para usar correctamente el tipo de encode.
+    después de `es_pkey_cifrada()` para pasar correctamente el tipo de encode.
 
     :param ruta_pkey:
-        `str` o `pathlib.Path` de ruta del archivo pkey.
+        `str` o `Path` de ruta del archivo pkey.
     
     :param passwd:
         `str` a probar como passphrase de la pkey.
@@ -52,8 +52,8 @@ def es_passwd_de_pkey(ruta_pkey: str | Path, tipo_encode: str, passwd: str) -> b
     :param tipo_encode:
         `str` mayús indicando el tipo de encode que usa la clave: "DER", "PEM"
 
-    :return:
-        `bool`: `True` si passwd descifra, `False` en caso contrario.
+    :return bool:
+        `True` si passwd descifra, `False` en caso contrario.
     """
     with open(ruta_pkey, 'rb') as b:
         data = b.read()
@@ -76,6 +76,18 @@ def bytes_publicos_rsa(ruta_pkey: str | Path, encode: str = "DER", password: byt
     
     Se asume que cuando se llama a ésta función ya se ha determinado
     encode y contraseña.
+
+    :param ruta_pkey:
+        `str` o `Path` de ruta del archivo pkey.
+
+    :param tipo_encode:
+        `str` mayús indicando el tipo de encode que usa la clave: "DER", "PEM".
+        Por defecto "DER"
+    
+    :param password:
+        `bytes` de la contraseña a utilizar para descifrar la clave privada.
+        Por defecto `None`
+
     """
     with open(ruta_pkey, 'rb') as b:
         data = b.read()

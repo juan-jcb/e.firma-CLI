@@ -382,7 +382,6 @@ async def firma(firmante_ctx: dict, pdfs: list) -> None:
 
     tls_ctx = tls.make_tls_trust(trust_system_store=True, ca_bundle=None)
     async with tls.TransporteTLSFirmas(ssl_context=tls_ctx) as tls_transport:
-
         print()
         logger.info("Cargando contexto opcional de la firma...")
 
@@ -396,7 +395,7 @@ async def firma(firmante_ctx: dict, pdfs: list) -> None:
         # TST en CMS (perfil 'T')
         if firmante_ctx['preferencias_firma']['TST_CMS'] == True:
             try:
-                ts_cms = tls_transport.get_timestamper(tsa_endpoint=TSA['endpoints'][0], https=False)
+                ts_cms = tls_transport.get_timestamper(tsa_endpoint=TSA['endpoints'][0])
             except Exception as e:
                 logger.warning("No se pudo configurar timestamp para CMS. Continuando sin el...")
                 print(e)
