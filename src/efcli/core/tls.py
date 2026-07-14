@@ -1,79 +1,68 @@
 import ssl, aiohttp
 from functools import cache
+from typing import Iterator
 
 from pyhanko.sign.timestamps.aiohttp_client import AIOHttpTimeStamper
-from pyhanko_certvalidator.fetchers.aiohttp_fetchers import AIOHttpFetcherBackend
+from pyhanko_certvalidator.fetchers.aiohttp_fetchers.util import LazySession
+#from pyhanko_certvalidator.fetchers.aiohttp_fetchers import AIOHttpFetcherBackend
 
 from efcli.config import TIMESTAMPING_CLIENT_HEADERS
+from .regex import es_https
 
-class TransporteTLSFirmas:
+class SesionTlSPerezosa(LazySession):
     """
-    Gestor de contexto: Conector async de aiohttp para gestionar el transporte
-    TLS de las conexiónes que se realizan en los bucles de firma:
-    
-        1. fetchers async propios para OCSP en perfiles L
-        2. timestampers de pyhanko en perfiles T, A
-    
-    Se reutiliza la misma conexión TLS durante toda la sesión de firma, se
-    abre al entrar al contexto y se cierra al salir.
+    Subclase variante de LazySession que retrasa la creación de la
+    ClientSession real hasta la primera llamada a get_session(), pero
+    construyéndola con un connector TLS y timeout propios en vez de
+    la ClientSession() directa de la implementación base.
 
-    Se necesita un gestor de contexto para las conexiones salientes de las
-    firmas ya que firmamos en bucle, y no queremos bombardear innecesariamente
-    los endpoints de las TSAs ni OCSPs con handshakes TCP + TLS completos por
-    cada iteración y nos comamos un rate-limiting o directamente nos bloquee
-    cualquier firewall intermedio.
-    
-    Lo más adecuado es evitar usar las funciones sincronas de pyhanko, que
-    crean conexiones completas en cada iteración. Gestionaremos nuesto propio
-    bucle de eventos, nuesto propio conector http y usaremos directamente el
-    codigo (que ya es) asincrono de pyhanko.
-
-    Así mismo.
-
-    Dado que el uso de TSA es considerablemente más voluminoso, más propenso
-    a errores en comparación con el manejo de los responders OCSP; se definirá
-    en esta misma clase un método de instanciación de timestampers para usarse
-    adentro del contexto:
-    
-        `get_timestamper()`
-    
-    Esto nos permite implementar lógica de fallback entre endpoints de TSA de
-    manera mucho más simple, sin reabrir la conexión ni reformular el flujo
-    de firma general en el bucle.
+    no hay asyncio.Lock porque igual que en la implementación original
+    de pyhanko, la línea self._session = aiohttp.ClientSession(...) es
+    completamente síncrona (el constructor de ClientSession no hace await
+    de nada), así que no hay punto de suspensión entre el chequeo is None
+    y la asignación. Dos corrutinas que llamen a get_session() "casi
+    simultáneamente" seguirán ejecutándose una a la vez dentro de ese
+    bloque sin ceder el control al loop, por lo que no hay condición de
+    carrera real en asyncio de un solo hilo.
     """
 
     def __init__(self, ssl_context: ssl.SSLContext, *, timeout: int = 10):
+        super().__init__()          # deja self._session = None
         self._ssl_context = ssl_context
         self._timeout = timeout
-        self._session: aiohttp.ClientSession | None = None
-        self._fetcher_backend: AIOHttpFetcherBackend | None = None
-        self._fetchers = None
 
-    async def __aenter__(self):
-        connector = aiohttp.TCPConnector(ssl=self._ssl_context)
-        self._session = aiohttp.ClientSession(
-            connector=connector,
-            timeout=aiohttp.ClientTimeout(total=self._timeout),
-        )
-        self._fetcher_backend = AIOHttpFetcherBackend(session=self._session)
-        self._fetchers = await self._fetcher_backend.__aenter__()
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        if self._fetcher_backend is not None:
-            await self._fetcher_backend.__aexit__(exc_type, exc, tb)
-        if self._session is not None:
-            await self._session.close()
-
-    @property
-    def fetchers(self):
-        return self._fetchers
-
-    @property
-    def session(self) -> aiohttp.ClientSession:
+    async def get_session(self) -> aiohttp.ClientSession:
         if self._session is None:
-            raise RuntimeError("TsaTransport no está abierto (usa 'async with').")
+            self._session = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(ssl=self._ssl_context),
+                timeout=aiohttp.ClientTimeout(total=self._timeout),
+            )
         return self._session
+
+    @property
+    def is_open(self) -> bool:
+        return self._session is not None
+
+    # close() se hereda tal cual de LazySession: opera sobre self._session
+    # sin conocer connector ni ssl_context, así que no hace falta tocarlo.
+
+class TransporteTLSFirmas:
+    """
+    Sesiones TLS asincronas 'lazy' con aiohttp.ClientSession para el bucle de firma.
+
+    Permite instanciar AIOHttpTimeStamper de pyhanko sin necesidad de tener una sesión
+    http asincrona ya abierta. Se instancia el transporte y solo si se necesita abrir
+    sockets se inicia la aiohttp.ClientSession real. Si en algún momento de la sesión
+    de firma se usa un "async_sign_pdf" o un "async_timestamp_pdf" o que llame a
+    get_session() en ese momento se inicia la sesión real sin depender de un bloque
+    async with.
+
+    No obstante esto no se realiza con gestor de contexto por lo que se debe cerrar
+    este objeto explicitamente al final de la lógica de quien la instancie.
+    """
+
+    def __init__(self, ssl_context: ssl.SSLContext, *, timeout: int = 10):
+        self._sesion_perezosa = SesionTlSPerezosa(ssl_context, timeout=timeout)
 
     def get_timestamper(self, tsa_endpoint: str, *, https: bool = True) -> AIOHttpTimeStamper:
         """
@@ -81,7 +70,34 @@ class TransporteTLSFirmas:
         la sesión/conexión TLS ya abierta. Se puede llamar varias veces
         (una por endpoint) sin coste adicional de conexión.
         """
-        return AIOHttpTimeStamper(url=tsa_endpoint, session=self.session, https=https, headers=TIMESTAMPING_CLIENT_HEADERS)
+        return AIOHttpTimeStamper(
+            session=self._sesion_perezosa,          # AIOHttpTimeStamper.get_session()
+            url=tsa_endpoint,                       # hará isinstance(..., LazySession)
+            https=https,                            # y delegará en tu get_session()
+            headers=TIMESTAMPING_CLIENT_HEADERS,
+        )
+
+    def iter_timestampers(self, tsa_endpoints: list[str]) -> Iterator[AIOHttpTimeStamper]:
+        """
+        Generador que hace yield de un AIOHttpTimeStamper por cada endpoint
+        de `tsa_endpoints`, en orden, reutilizando siempre la misma sesión.
+
+        Pensado para lógica de fallback: se pide el primer valor antes de
+        empezar a firmar, y si ocurre una excepción de comunicación con la
+        TSA dentro del bloque de firma, se llama a `next()` sobre este mismo
+        generador para obtener el timestamper del siguiente endpoint sin
+        perder la conexión TLS.
+
+        Lanza StopIteration cuando se agotan los endpoints configurados.
+        """
+        for endpoint in tsa_endpoints:
+            yield self.get_timestamper(
+                tsa_endpoint=endpoint,
+                https=es_https(url=endpoint)
+            )
+
+    async def cerrar(self):
+        await self._sesion_perezosa.close()  # idempotente si nunca se abrió
 
 """
 Funciones basadas en politicas de uso de TLS definidas por *intención*.

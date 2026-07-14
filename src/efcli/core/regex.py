@@ -14,6 +14,8 @@ ASCII_SIMPLE = re.compile(r'^[A-Za-z0-9_.-]+(?: [A-Za-z0-9_.-]+)*$')
 SPANISH = re.compile(r'^[A-Za-zÁÉÍÓÚáéíóúÑñÜü0-9_.-]*(?: [A-Za-zÁÉÍÓÚáéíóúÑñÜü0-9_.,-]+)*$')
 # Correos (simple), input vacio permitido.
 CORREOS = re.compile(r'^(?:[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})?$')
+# URLs HTTP/S, coincide con ambas plano y tls.
+HTTP = re.compile(r'^https?://', re.IGNORECASE)
 
 def input_regex(patron: re.Pattern, mensaje: str, pista: str):
     '''
@@ -41,3 +43,10 @@ def input_regex(patron: re.Pattern, mensaje: str, pista: str):
             continue
         break
     return _
+
+def es_https(url: str) -> bool:
+    """Devuelve True si la URL usa https, False si usa http plano."""
+    match = HTTP.match(url)
+    if not match: # None si no coincide con ninguno, no debería de pasar pero bueno.
+        return None
+    return url.lower().startswith('https://')
