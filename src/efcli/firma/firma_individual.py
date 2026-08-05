@@ -23,18 +23,20 @@ from efcli.firma import prefirma
 
 logger = logging.getLogger(__name__)
 
-xdg_config.load_global()
-BANXICO_PKI_CTX = pki.get_validation_context(
-    trust_roots=xdg_config.GLOBAL_CONFIG['PKI']['trust_roots'],
-    intermediate_cas=xdg_config.GLOBAL_CONFIG['PKI']['intermediate_cas'],
-)
-TSA = xdg_config.GLOBAL_CONFIG['TSA']
-OCSP = xdg_config.GLOBAL_CONFIG['OCSP']
-PDF_RUTA_BASE = xdg_config.GLOBAL_CONFIG['pdf_ruta_base']
+# de momento
+if Path(xdg_config.GLOBAL_CONFIG_FILE).is_file():
+    xdg_config.load_global()
+    BANXICO_PKI_CTX = pki.get_validation_context(
+        trust_roots=xdg_config.GLOBAL_CONFIG['PKI']['trust_roots'],
+        intermediate_cas=xdg_config.GLOBAL_CONFIG['PKI']['intermediate_cas'],
+    )
+    TSA = xdg_config.GLOBAL_CONFIG['TSA']
+    OCSP = xdg_config.GLOBAL_CONFIG['OCSP']
+    PDF_RUTA_BASE = xdg_config.GLOBAL_CONFIG['pdf_ruta_base']
 
-# asumimos que si o si existen TSAs fijas para el programa indpendientemente de si se usan o no.
-TLS_BASE = tls.TransporteTLSFirmas(ssl_context=tls.make_tls_trust(trust_system_store=True, ca_bundle=None))
-GENERADOR_TSA = TLS_BASE.iter_timestampers(TSA["endpoints"])
+    # asumimos que si o si existen TSAs fijas para el programa indpendientemente de si se usan o no.
+    TLS_BASE = tls.TransporteTLSFirmas(ssl_context=tls.make_tls_trust(trust_system_store=True, ca_bundle=None))
+    GENERADOR_TSA = TLS_BASE.iter_timestampers(TSA["endpoints"])
 
 async def manejador_ocsp(firmante_crt, issuer_crt, dir_save):
     perfil_firma = []
@@ -453,23 +455,18 @@ async def firma(firmante_ctx: dict, pdfs: list) -> None:
     dir_sesion_firma = Path(f'{PDF_RUTA_BASE}/({usuarios.load_state_users()['principal']}) Sesión de Firma - {datetime.now().strftime("%a %b %d %I:%M:%S %p %Y")}')
     perfil_firma_final = ['B']
     
-    #async with tls.TransporteTLSFirmas(ssl_context=tls_ctx) as tls_transport:
-    #    generador_tsa = tls_transport.iter_timestampers(TSA["endpoints"]) # asumimos que si o si existen TSAs fijas para el programa.
+    print()
+    logger.info("Iniciando sesión de firma.")
     
-    # Lógica de sesión de firma.
+    dir_sesion_firma.mkdir(parents=True)
+    core_utils.guardar_archivos(f'{dir_sesion_firma}/firmante_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=firmante_ctx['firmante_ca_chain']).encode('utf-8'))
+    core_utils.guardar_archivos(
+        f'{dir_sesion_firma}/firmante_info', 'pem',
+        firmante_x509=pem.armor(der_bytes=firmante.signer.signing_cert.dump(), type_name="CERTIFICATE"),
+        firmante_cadena=pki.hacer_cadena_pem(chain_path=firmante_ctx['firmante_ca_chain'], elementos="no_subject")
+    )
+    ini_time = perf_counter()
     try:
-        print()
-        logger.info("Iniciando sesión de firma.")
-
-        dir_sesion_firma.mkdir(parents=True)
-        core_utils.guardar_archivos(f'{dir_sesion_firma}/firmante_info', 'txt', resumen_cadena=pki.leer_ca_chain_simple(chain_path=firmante_ctx['firmante_ca_chain']).encode('utf-8'))
-        core_utils.guardar_archivos(
-            f'{dir_sesion_firma}/firmante_info', 'pem',
-            firmante_x509=pem.armor(der_bytes=firmante.signer.signing_cert.dump(), type_name="CERTIFICATE"),
-            firmante_cadena=pki.hacer_cadena_pem(chain_path=firmante_ctx['firmante_ca_chain'], elementos="no_subject")
-        )
-        ini_time = perf_counter()
-    
         with registros.modded_logs(target_logger=logger, fmt="[%(levelname)s] (%(asctime)s) %(message)s"):
             if firmante_ctx['perfiles_firma']['OCSP'] == True:
                 print()
