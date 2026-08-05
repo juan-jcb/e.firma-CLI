@@ -8,9 +8,9 @@ Firma documentos PDF en esquema PAdES-LTV completamente bajo TU control: sin ced
 - Total libertad para elegir el perfil de firma que más se ajuste a lo que necesitas: B, BT, BA, BTA, L, LT, LA, LTA, A.
 - Totalmente gratuito para perfiles B.
 - Gratuito para perfiles L siempre y cuando el SAT no cierre arbitrariamente sus endpoints OCSP públicos (≧︿≦).
-- Si verdaderamente necesitas sellos de tiempo RFC 3161 (perfiles T, A) para fecha cierta NOM-151 contacta directamente al PSC y añade el endpoint de su TSA en la configuración del programa: https://psc.economia.gob.mx/directorio.html
+- Si verdaderamente necesitas sellos de tiempo RFC 3161 (perfiles T, A) para fecha cierta NOM-151 contacta directamente al PSC (https://psc.economia.gob.mx/directorio.html) y añada el endpoint de su TSA en la configuración del programa.
 
-Se prioriza la custodia de tu material criptográfico.
+Se priorizará la custodia de tu material criptográfico y documentos PDF firmados y por firmar.
 
 - Claves privadas y archivos PDF nunca salen de tu dispositivo.
 - No se almacenan contraseñas ni historiales de firma.
@@ -23,16 +23,7 @@ Se prioriza la custodia de tu material criptográfico.
 - pip
 - venv (para instalación aislada **solo del paquete**, se usa un entorno XDG separado)
 
-### Instalación global
-
-```bash
-git clone https://github.com/juan-jcb/e.firma-CLI.git
-cd e.firma-CLI
-python3 -m pip install .
-python3 -m pip install -e . # para desarrollo
-```
-
-### Instalación aislada
+### Instalación
 
 ```bash
 git clone https://github.com/juan-jcb/e.firma-CLI.git
@@ -113,7 +104,7 @@ Esta herramienta surge como propuesta de solución para abordar 3 situaciones:
 
 2. El poco o casi nulo acceso a **alternativas funcionales de bajo coste** para conseguir el fin anteriormente mencionado sin tener que recurrir a proveedores terceros con cuotas de uso considerablemente altas, los cuales fundamentan sus precios y modelo de negocio en "la capa de orquestación y el ritual de firma", no sobre la acción de firma en sí misma, cosa que indirectamente termina restringiendo el acceso a la firma propia y local, ya sea puntualizada o de alto volumen pero que no requiere de una capa de organización y orquestación adicional.
 
-3. La normalización de la renuncia sobre la custodia del material criptográfico para que otros servicios la manejen por ti, por ejemplo: el acceso a la emisión de facturas, acceso al buzón tributario o acceso a plataformas de firmas de terceros, todos requieren **la entrega voluntaria del material en plano** a un tercero. Sin mencionar N cantidad de otros chanchuyos informales en los que se te pide hagas entrega de tu material criptográfico bajo la premisa del "confia en mi bro" y a los que lamentablemente se accede por desconocimiento sobre las capacidades e implicaciones posteriores que poseen, otorgan y adquieren este tipo de artefactos.
+3. La normalización de la renuncia sobre la custodia del material criptográfico para que otros servicios la manejen por ti, por ejemplo: el acceso a la emisión de facturas, acceso al buzón tributario o acceso a plataformas de firmas de terceros, todos requieren **la entrega voluntaria del material en plano** a un tercero. Sin mencionar N cantidad de otros chanchullos informales en los que se te pide hagas entrega de tu material criptográfico bajo la premisa del "confia en mi bro" y a los que lamentablemente se accede por desconocimiento sobre las capacidades e implicaciones posteriores que poseen, otorgan y adquieren este tipo de artefactos.
 
 ## En cuanto al funcionamiento.
 
