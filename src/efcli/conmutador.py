@@ -1,5 +1,6 @@
 import logging
 
+from efcli import patches # no se usa de forma "tradicional" pero se declara aquí para que siempre se cargue al ejecutar main.
 from efcli import config
 
 # no me termina de agradar esta forma de importar, pero desde un inicio no tendría q estár importando aquí modulos posteriores xD

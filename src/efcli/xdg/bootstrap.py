@@ -135,8 +135,8 @@ def init() -> None:
 
     sys.stdout.write("\033[2J\033[3J\033[H")
     print(mensajes.mensajes_init['bienvenida_corta'])
-    _ = None
     print("Pulse ENTER para continuar ", end='')
+    _ = None
     while _ != '':
         _ = input()
 
@@ -179,22 +179,27 @@ def init() -> None:
 pdf_ruta_base = "{PDF_RUTA_BASE}"
 
 [PKI]
-trust_roots = "{xdg_config.DATA_PKI_DIR / 'banxico_root_bundle.pem'}"
-intermediate_cas = "{xdg_config.DATA_PKI_DIR / 'sat_intermedia_bundle.pem'}"
+trust_roots = "{xdg_config.DATA_PKI_DIR / PKI_ASSETS[0].name}"
+intermediate_cas = "{xdg_config.DATA_PKI_DIR / PKI_ASSETS[1].name}"
 
 [OCSP]
-# el X509 del responder curiosamente si tiene extensión AIA: OCSP - URI:http://www.sat.gob.mx/ocsp
 endpoints = [
     "https://cfdi.sat.gob.mx/edofiel",
     "https://www.sat.gob.mx/ocsp"
 ]
+# el X509 de los responder curiosamente si tienen extensión AIA: OCSP - URI:http://www.sat.gob.mx/ocsp
 
 [TSA]
+HASH = "sha384"
 endpoints = [
     "https://freetsa.org/tsr",
-#    "https://pki.codegic.com/codegic-service/timestamp"
+    "https://timestamp.sectigo.com",
+#    "http://timestamp.sectigo.com",
+
+#   TSA privada que debe importarse.
+#   Responde 'Content-Type' no estándar: application/timestamp-response
+    "https://pki.codegic.com/codegic-service/timestamp"
 ]
-HASH = "sha256"
 '''
 
     # Estructura lógica del entorno externo tras init()

@@ -1,37 +1,40 @@
-import efcli
+import efcli, os
 from pathlib import Path
 
 APP = "efcli"
 VERSION = "0.1.0"
+REPOSITORY = "https://github.com/juan-jcb/e.firma-CLI"
 
 PACKAGE_DIR = Path(efcli.__file__).parent
 PKI_ASSETS = (
-    PACKAGE_DIR / "assets" / "banxico_pki" / "banxico_root_bundle.pem",
-    PACKAGE_DIR / "assets" / "banxico_pki" / "sat_intermedia_bundle.pem",
+    PACKAGE_DIR / "assets" / "banxico_pki" / "00-banxico_root_bundle.pem",
+    PACKAGE_DIR / "assets" / "banxico_pki" / "01-sat_intermedia_bundle.pem",
 )
+
+DEVICE = os.uname()
 
 # Plantilla en caso de formalizar esta herramienta.
 #   User-Agent: <NombreProducto>/<Versión> (RFCXXXX; <Plataforma>) [+URL opcional]
 
 OCSP_CLIENT_HEADERS = {
-    "User-Agent": "OCSP-Client/1.0",
+    "User-Agent": f"{APP.upper()}-OCSP/{VERSION} (RFC6960; {DEVICE.sysname}; {DEVICE.machine}) [+{REPOSITORY}]",
     "Content-Type": "application/ocsp-request",
     "Accept": "application/ocsp-response"
 }
+    #"User-Agent": "OCSP-Client/1.0",
     #"User-Agent": "RFC6960-OCSP-Client/1.0",
     #"User-Agent": "PKI Validation Client/2.4 (OCSP; Windows 11; x64)",
-    #"User-Agent": "EFCLI-OCSP/0.1.0 (RFC6960; Linux x86_64)"
 
 TIMESTAMPING_CLIENT_HEADERS = {
-    "User-Agent": "TSP-Client/1.0",
+    "User-Agent": f"{APP.upper()}-TSP/{VERSION} (RFC3161; {DEVICE.sysname}; {DEVICE.machine}) [+{REPOSITORY}]",
     "Content-Type": "application/timestamp-query",
     "Accept": "application/timestamp-reply",
 }
+    #"User-Agent": "TSP-Client/1.0",
     #"User-Agent": "RFC3161-TSP-Client/1.0",
     #"User-Agent": "PKI TimeStamp Client/1.0",
     #"User-Agent": "SecureTimestamp/1.0 (+https://example.com)",
     #"User-Agent": "FirmaDigital-TSP/2.1.0 (+https://firma.example.com)",
-    #"User-Agent": EFCLI-TSP/0.1.0 (RFC3161; Linux x86_64)
 
 # Flags estáticas se evaluan en conmutador, las de argumento en sintaxis post-conmutador.
 # Se mantiene la estructura en este diccionario por estetica visual.
@@ -67,6 +70,15 @@ FLAGS = {
             }
         },
 
+        'pki': {
+            'flags_de_argumento': {
+                'add_ca': ('--add-ca',),
+            },
+            'flags_estaticas': {
+                'list': ('--list',),
+            }
+        },
+
         'ocsp': {
             'flags_de_argumento': {
                 'request': ('--request',),
@@ -76,14 +88,15 @@ FLAGS = {
             'flags_estaticas': {
                 'request': ('--request',),
             }
-            
         },
+            
         'tsa': {
             'flags_de_argumento': {
                 'token': ('--token',),
             },
             #'flags_estaticas': {}
         },
+
         'pdf': {
             'flags_de_argumento': {
                 'firmas': ('--firmas',),
@@ -126,6 +139,7 @@ Uso de submodulos:
 
     efcli init [opciones] ...
     efcli user [opciones] ...
+    efcli pki  [opciones] ...
     efcli ocsp [opciones] ...
     efcli tsa  [opciones] ...
     efcli pdf  [opciones] ...
@@ -153,6 +167,11 @@ Submodulo USER:
   user --conf               Imprime la configuración del usuario principal simplificada.
   user --toml               Imprime la configuración del usuario principal en su formato original TOML.
 
+Submodulo PKI (no disponible aún):
+  
+  pki --list                Imprime el listado de CAs en las que éste programa confia actualmente.
+  pki --add-ca FILE         Importa un Bundle de CAs para confiar con éste programa.
+  
 Submodulo OCSP:
 
   ocsp --request CERT       (con argumento) Nueva consulta OCSP para 'CERT' usando el responder por defecto.
@@ -176,12 +195,12 @@ Miscelánea:
 
     "msj_desfase_temporal": """ATENCION.
 
-Garantizar un perfil robusto de validación para una firma digital es un proceso sensible
-a desfases de tiempo!, especialmente para el perfil 'Long-Term (L)'.
+Garantizar un perfil robusto de validación para una firma digital es un proceso sensible a desfases de tiempo!,
+especialmente para el perfil 'Long-Term (L)'.
 
-Hasta el momento no se ha contactado con ninguna entidad de validación externa de la
-cual depende éste perfil, únicamente se ha cargado el contexto y material criptográfico
-necesario para continuar con el proceso de firma que si DEPENDE de coordinación temporal.""",
+Hasta el momento no se ha contactado con ninguna entidad de validación externa de la cual depende éste perfil,
+únicamente se ha cargado el contexto y material criptográfico necesario para continuar con el proceso de firma
+que si DEPENDE de coordinación temporal.""",
 
     "disclaimer_firmas_separadas": """Al firmar bajo esquema PAdES el contenedor de firma CMS/PKCS#7 generado se incrusta en el PDF resultante,
 por lo que cada documento firmado ya actua como elemento único para su uso práctico: transporte, lectura

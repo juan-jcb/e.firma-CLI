@@ -44,9 +44,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install .
 python3 -m pip install -e . # para desarrollo
+
+# Symlink para usar con $PATH
 deactivate
 sudo ln -s ruta/hacia/efcli/.venv/bin/efcli /usr/local/bin/efcli
-efcli init
+
+efcli init  # Inicialización y configuración de entorno XDG.
+efcli       # uso normal post inicialización.
 ```
 
 ## Contexto operativo.
