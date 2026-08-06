@@ -6,24 +6,27 @@ Firma documentos PDF en esquema PAdES-LTV completamente bajo TU control: sin ced
 
 - Firma PDFs individualmente o en volumen: La misma lógica para firmar uno firmará miles de documentos.
 - Elige libremente el perfil de firma que más se ajuste a lo que necesitas: B, BT, BA, BTA, L, LT, LA, LTA, A.
+
+Amigable con el costo de uso.
+
 - Totalmente gratuito para perfiles B.
 - Gratuito para perfiles L, siempre y cuando el SAT no cierre arbitrariamente sus endpoints OCSP públicos (≧︿≦).
-- Gratuito para perfiles T y A según la politica de uso/rate limit de proveedores de sellos de tiempo (RFC 3161) en TSAs públicas de internet.
-- De pago en perfiles T y A para sellos de tiempo con fecha cierta por NOM-151. Si en verdad los necesitas contacta tu mismo al PSC! (https://psc.economia.gob.mx/directorio.html) y añade el endpoint de su TSA privada a la configuración del programa.
+- Gratuito para perfiles T y A según la política de uso/rate limit de proveedores de sellos de tiempo (RFC 3161) en TSAs públicas de internet.
+- De pago en perfiles T y A para sellos de tiempo con fecha cierta por NOM-151. Si en verdad necesitas fecha cierta en tus firmas contacta directamente al PSC (https://psc.economia.gob.mx/directorio.html) y añade el endpoint de su TSA privada a la configuración del programa.
 
 Se prioriza la custodia de claves y documentos PDF, así como la transparencia criptográfica de la herramienta.
 
-- Claves privadas y archivos PDF nunca salen de tu dispositivo.
+- Tus claves privadas y archivos PDF nunca salen de tu dispositivo.
 - Si el perfil de firma lo requiere, la única comunicación por internet es HTTPS para solicitar estados OCSP a endpoints del SAT y/o sellos de tiempo a endpoints de TSA que tú mismo eliges y configuras.
-- La operación de firma digital ocurre 100% en local independientemente del perfil y sus resultados se almacenan localmente.
+- La operación de firma digital ocurre 100% en local independientemente del perfil y los resultados se almacenan en tu dispositivo.
 - Las librerías criptográficas y protocolos utilizados en esta herramienta son públicos y auditables.
 
-Se almacena **en local** una cantidad minima funcional de datos para gestionar un entorno XDG básico y reducir la fricción de uso.
+Se almacena **localmente** una cantidad minima funcional de archivos para gestionar un entorno XDG básico y reducir la fricción de uso.
 
 - Se almacenan archivos de configuración y preferencias de uso para el programa y sus usuarios locales.
+- Los resultados que producen las firmas se almacenan en directorios autocontenidos fáciles de encontrar, navegar y borrar.
 - Nunca se almacenan contraseñas de claves privadas.
 - Nunca se almacenan historiales o registros de firma.
-- Los resultados que producen las firmas se almacenan en directorios autocontenidos fáciles de encontrar, navegar y borrar.
 - Si ya no necesitas el entorno, borralo completo cuando quieras en 1 solo comando!.
 
 ### Requisitos
@@ -43,6 +46,7 @@ python3 -m pip install .
 python3 -m pip install -e . # para desarrollo
 deactivate
 sudo ln -s ruta/hacia/efcli/.venv/bin/efcli /usr/local/bin/efcli
+efcli init
 ```
 
 ## Contexto operativo.
@@ -86,7 +90,7 @@ Esto se traduce en la práctica tal que: es necesario descargar desde el listado
 - 00000000000000000004
 - 00000000000000000005
 
-E importarlos manualmente en su respectivo ***software de validación de firmas***; por ejemplo **Adobe Acrobat Reader** para poder así validar existosamente cualquier firma realizada, ya sea por e.firma CLI o por otras herramientas disponibles en el mercado (y que operen en el contexto PKI del Banco de México y el SAT).
+E importarlos manualmente en su respectivo ***software de validación de firmas***; por ejemplo **Adobe Acrobat Reader** para poder así validar existosamente cualquier firma realizada, ya sea por e.firma CLI o por otras herramientas disponibles en el mercado (que puedan operen en el contexto PKI del Banco de México y el SAT).
 
 Adicional: los certificados con números de serie 1 y 2 **no se consideran** puesto que se encuentran vencidos, la entidad raíz 2 siendo el caso más reciente habiendo expirado con fecha: **Jul 20 18:32:51 2026 GMT**, por lo que a efectos prácticos de esta herramientas solo consideraremos los números de serie 3, 4, 5 (6 en un futuro si es que Banxico crease una nueva CA raíz)
 
@@ -115,14 +119,14 @@ Esta herramienta surge como propuesta de solución para abordar 3 situaciones:
 
 ## En cuanto a la operación principal.
 
-La funcionalidad base de e.firma CLI permite firmar documentos PDF con un perfil de firma máximo **PAdES-B-LTA**, y con total libertad de elección sobre el prefil de firma aplicable en cada sesión de firma.
+La funcionalidad base de e.firma CLI permite firmar documentos PDF con un perfil de firma máximo **PAdES-B-LTA**, con total libertad de elección sobre el perfil de firma aplicable en cada sesión de firma.
 
-e.firma CLI te permite ejercer los 4 perfiles de firma de PAdES Baseline dandole al firmante la libertad de elegir el perfil de firma que quiere usar para en cualquiera de sus posibles combinaciones. Y ya que es lo más prudente, de manera resumida se desglosan los perfiles de firma que contempla esta herramienta:
+e.firma CLI te permite ejercer los 4 perfiles de firma **PAdES Baseline** en cualquiera de sus posibles combinaciones. Y ya que hablamos de perfiles de firma, lo más prudente es desglosar (sin extender innecesariamente) qué son y de qué se componene los perfiles de firma que contempla la herramienta:
 
 - **B**: Firma con certificado X.509, opcionalmente cadena de confianza de su PKI (e.firma CLI la incluye de todas formas) y hora del reloj del dispositivo del firmante.
 - **L**: Firma con certificado X.509, cadena de confianza completa (sin raíz), evidencia OCSP/CRL proveniente de la PKI del firmante y hora del reloj del dispositivo del firmante. Permite corroborar que una determinada firma fue realizada mientras el certificado del firmante era válido, sin depender a posteriori de la infraestructura de la PKI. Es progresión del perfil B (B -> L).
 - **T**: Firma con sello de tiempo de TSA incrustado en la propia firma. Es el aspecto que otorga la "fecha cierta" al artefacto de firma situandolo en X momento del tiempo. Es técnicamente una contrafirma hecha por una autoridad de sellado de tiempo TSA. Dicho literalmente: "Una TSA firma la firma del firmante, confiando en la TSA como autoridad imparcial para determinar el tiempo". Es complementario de los perfiles anteriores (ej: BT, LT).
-- **A**: Sello de tiempo de TSA sobre 1 PDF con N cantidad de evidencias anteriores. Es el mismo tipo de sello de tiempo (TimeStampToken) pero aplicado sobre el PDF **junto** a cualquier cantidad de evidencias criptográficas pre-existentes (multiples firmas, evidencias de validación, otros TSTs, etc.). Son incrementales. Generalmente ocurren al final de una sesión de firma para sellar todas las evidencias en un determinado momento del tiempo. Le da "fecha cierta" tanto al contenido del PDF junto a cualquier otra evidencia u operación hecha sobre este. Es complementario de los perfiles anteriores (ej: BA, LA, BTA, LTA)
+- **A**: Sello de tiempo de TSA sobre un documento PDF con N cantidad de evidencias anteriores. Es el mismo tipo de sello de tiempo (TimeStampToken de RFC 3161) pero aplicado sobre el PDF **junto** a cualquier cantidad de evidencias criptográficas pre-existentes (multiples firmas, evidencias de validación, otros TSTs, etc.). Son incrementales. Generalmente ocurren al final de una sesión de firma para sellar todas las evidencias en un determinado momento del tiempo. Le da "fecha cierta" tanto al PDF como a cualquier otra evidencia u operación criptográfica hecha sobre este. Es complementario de los perfiles anteriores (ej: BA, LA, BTA, LTA)
 
 Para su función principal e.firma CLI ya posee una implementación e interfaz mayoritariamente funcional, siempre claro buscando robustecer su operatividad.
 

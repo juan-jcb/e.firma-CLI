@@ -129,17 +129,24 @@ def init() -> None:
     Función inicial para crear el entorno XDG externo de e.firma-CLI.
     Prompt interactivo.
     """
-    import time
+    import time, sys
     from colorama import Fore
     from efcli.config import PKI_ASSETS
-    print("CONFIGURACIÓN INICIAL.\n")
-    
+
+    sys.stdout.write("\033[2J\033[3J\033[H")
+    print(mensajes.mensajes_init['bienvenida_corta'])
+    _ = None
+    print("Pulse ENTER para continuar ", end='')
+    while _ != '':
+        _ = input()
+
     # 1. Directorio de firmas
+    sys.stdout.write("\033[2J\033[3J\033[H")
     print(mensajes.mensajes_init['directorio_firmas'])
     while True:
         home_depth = Path.home().parts
         flag = False
-        _ = input("Directorio para firmas ($HOME/): ")
+        _ = input("Nombre para su directorio de firmas (prefijo $HOME/): ")
         test_depth = (Path.home() / _).parts
         if len(test_depth) - 2 == len(home_depth) - 1: # total -2 porque se le saca la / y el nivel actual (cualquier otra cosa no está al mismo nivel)
             if (Path.home() / _).exists():
@@ -158,8 +165,8 @@ def init() -> None:
         else:
             logger.warning("El directorio debe estár al mismo nivel que su $HOME, por favor ingrese uno nuevo.")
     time.sleep(1)
-    print("\033[H\033[2J", end="")
 
+    sys.stdout.write("\033[2J\033[3J\033[H")
     new_user = usuarios.new_user(mensajes=mensajes.mensajes_init, es_init=True)
     NOMBRE_USUARIO, CERT_USUARIO, PKEY_USUARIO, ID_FIRMA, NOMBRE_FIRMANTE, RAZON, LUGAR, CONTACTO = new_user['main_values']
     USER_DIR, USER_CONFIG_FILE, cert_input, pkey_input = new_user['extra']

@@ -12,28 +12,21 @@ from efcli.config import APP
 mensajes_init = {
     'directorio_firmas': """1. Directorio de firmas.
 
-e.firma CLI definirá en su $HOME un directorio dedicado a las operaciones
-involucradas con firmas digitales. Este directorio está diseñado para que
-ahí mueva los archivos .pdf que desea firmar (puede ser 1 pdf o más, ya que
-la lógica para firmar es la misma sin importar si la firma es por archivo
-individual o por lote).
+e.firma CLI definirá en su $HOME un directorio dedicado a las operaciones involucradas con firmas digitales. Este directorio está
+diseñado para que ahí mueva los archivos .pdf que desea firmar (puede ser 1 pdf o más, ya que la lógica para firmar es la misma
+sin importar si la firma es por archivo individual o por lote).
 
-Será en ese directorio cuyo nombre usted indice que se generarán los resultados
-de cada firma en un forma de un subdirectorio nuevo fácil de indentificar
-creado en cada instancia o sesión de firma.
+Será en ese directorio cuyo nombre usted indice que se generarán los resultados de cada firma en un forma de un subdirectorio nuevo
+fácil de indentificar creado en cada instancia o sesión de firma.
 """,
 
     'usuario_local': """2. Usuario local.
 
-e.firma CLI utiliza perfiles de usuario locales que recopilan los datos más
-relevantes para efectuar una firma digital.
+e.firma CLI utiliza perfiles de usuario locales que recopilan los datos más relevantes para efectuar una firma digital.
 
-A continuación se desglosarán los campos necesarios para crear un perfil de
-usuario completo y establecer la configuración global del programa.
-
-Para comenzar a utilizar efcli se requiere unicamente de 1 usuario, el cual
-si posteriormente lo desea podrá editar, crear nuevos usuarios, borrar ya
-existentes o consultar configuraciones mediante el submodulo 'efcli user'.
+A continuación se desglosarán los campos necesarios para crear un perfil de usuario completo y establecer la configuración global del
+programa. Para comenzar a utilizar efcli se requiere unicamente de 1 usuario, el cual si posteriormente lo desea podrá editar, crear
+nuevos usuarios, borrar ya existentes o consultar configuraciones mediante el submodulo 'efcli user'.
 """,
 
     'archivos_efirma': f"""3. Firma electrónica.
@@ -43,131 +36,119 @@ Para firmar documentos se requiere de los archivos incluidos en su e.firma:
     - Clave privada (archivo .key)
     - Certificado X.509 (archivo .cer)
 
-Este programa *realizará 1 copia* de cada archivo y las almacenará localmente
-en la ruta XDG estándar 'XDG_DATA_HOME' del usuario actual en su sistema:
+Este programa realizará *1 copia* de cada archivo y las almacenará localmente en la ruta XDG estándar (XDG_DATA_HOME) del usuario actual
+en su sistema operativo, y hará lo mismo para cada usuario nuevo creado, por ejemplo:
 
     '/home/mi_usuario/.config/{APP}/usuario_local/usuario_local.key'
     '/home/mi_usuario/.config/{APP}/usuario_local/usuario_local.crt'
-
-Y lo mismo para cada usuario nuevo creado.
 """,
 
     'metadatos_firma': """4. Metadatos de su firma.
 
-Cada vez que usted efectua una firma, independientemente del perfil de
-firma usado (B, L, T, A) su firma incluirá metadatos visibles en cualquier
-validador de firmas digitales (como Adobe Acrobat Reader) para facilitar
-la distinción visual, por ejemplo en casos donde 1 mismo PDF posee multiples
-firmas.
+Cada vez que usted efectua una firma PAdES, independientemente del perfil utilizado (B, L, T, A) el PDF resultante incluirá metadatos
+de su firma visibles en cualquier validador de firmas digitales (como Adobe Acrobat Reader), esto para facilitar la distinción visual
+por ejemplo en casos donde 1 mismo PDF posee multiples firmas.
 
-Estos metadatos incluyen:
+Los metadatos de firma son:
 
-    - Identificador de la firma: Cualquier cadena de texto dificil de
-      repetir (recomiendo usar el CURP ya que es un valor relativamente
-      unico).
-
-    - Nombre del firmante: El nombre de la persona que realiza la firma.
-      (en el 99% de los casos es el dueño de la e.firma)
-
-    - Razón de firma: Justificación corta de cómo o por qué se firma
-      (ej: "Firmado personal con mi e.firma")
-
-    - Lugar de firma: Ubicación generalizada de la firma (ej: "México",
-      "Puebla", "Administración", "Sistemas")
-
-    - Contacto del firmante: Comunmente el correo del firmante.
+    1. Identificador de la firma: Cualquier cadena de texto dificil de repetir (recomiendo CURP ya que es relativamente unico).
+    2. Nombre del firmante: El nombre de la persona que realiza la firma (en el 99% de los casos es el dueño de la e.firma).
+    3. Razón de firma: Justificación corta de cómo o por qué se firma (ej: "Firmado personal con mi e.firma").
+    4. Lugar de firma: Ubicación generalizada de la firma (ej: "México", "Puebla", "Administración", "Sistemas").
+    5. Contacto del firmante: Comunmente el correo del firmante.
 
 Matiz adicional.
 
-Si usted duda sobre utilizar datos personales en los campos de metadatos
-de su firma, esto no supone una exposición innecesaria de información
-puesto que el propio certificado X.509 de su e.firma ya incluye datos
-relevantes su dueño, especificamente en el 'Subject:' y en los campos:
+Si usted duda sobre utilizar datos personales en los campos de metadatos de su firma, esto no supone una exposición innecesaria
+de información puesto que el propio certificado X.509 de su e.firma ya incluye datos relevantes de su dueño, especificamente en
+el 'Subject:' y sus campos:
 
-    - CN=, name=, O=            (contiene su nombre completo)
-    - serialNumber=             (contiene su CURP)
-    - x500UniqueIdentifier=     (contiene su RFC)
-    - emailAddress=             (contiene el correo que uso en el trámite de emisión)
+    - CN=, name=, O=            (ya contiene su nombre completo)
+    - serialNumber=             (ya contiene su CURP)
+    - x500UniqueIdentifier=     (ya contiene su RFC)
+    - emailAddress=             (ya contiene el correo que uso en el trámite de emisión)
 
-Cualquier firma PAdES incluye el certificado x509 del firmante (además de
-los metadatos), por lo que aunque no los incluya, si se firma mediante PAdES,
-cualquiera que valide la firma podrá leer los campos de su certificado para
-saber de quién proviene.
+Cualquier firma PAdES (sin importar el perfil) incluye el certificado x509 del firmante (además de los metadatos) dentro del
+PDF resultante, por lo que, aunque usted decida no los incluir metadatos explicitamente, si firma mediante PAdES cualquiera que
+valide dicha firma podrá leer los campos antes mencionados desde su certificado para saber exactamente de quién proviene.
 
-Puede llenar los campos o dejarlos en blanco a criterio, de igual forma esta
-herramienta le permitirá cambiarlos más adelante si así lo desea.
+Puede llenar los campos o dejarlos en blanco (ENTER) a criterio, de igual forma esta herramienta le permitirá cambiarlos más
+adelante si así lo desea.
 """,
 
     'pefiles_firma': """5. Preferencias para perfil de firma.
 
-Los perfiles (o niveles) de firma definidos en ETSI EN 319 142-1 especifican qué elementos criptográficos
-y de validación debe incorporar una firma PAdES incrustada en un PDF. Definen los requisitos de presencia
-y cardinalidad sobre los campos de firma, atributos y servicios para cuatro niveles de firma baseline:
+Los perfiles (o niveles) de firma definidos en ETSI EN 319 142-1 especifican qué elementos criptográficos y de validación debe
+incorporar una firma PAdES incrustada en un PDF. Definen los requisitos de presencia y cardinalidad sobre los campos de firma,
+atributos y servicios para cuatro niveles de firma baseline:
 
-    - Basic     (B)
-    - Long-Term (L)
-    - Timestamp (T)
-    - Archival  (A)
+    Basic (B), Long-Term (L), Timestamp (T), Archival (A)
 
-Los cuales suelen seguir la siguiente estructura progresiva:
-
-    - PAdES-B-B
-    - PAdES-B-L
-    - PAdES-B-LT
-    - PAdES-B-LTA
+Los cuales suelen seguir la siguiente estructura progresiva: B -> L -> LT -> LTA
     
-El perfil determina directamente hasta cuándo y bajo qué condiciones un validador puede comprobar la validez
-de la firma: cuanto mayor es el nivel, mayor es la resistencia frente a la expiración/revocación de certificados
-y frente a la degradación criptográfica con el paso del tiempo.
+El perfil determina directamente hasta cuándo y bajo qué condiciones un validador puede comprobar la validez de la firma: cuanto
+mayor es el nivel, mayor es la resistencia frente a la expiración/revocación de certificados y frente a la degradación criptográfica
+con el paso del tiempo.
 
-De manera muy resumida se entienden los perfiles de firma de la siguiente manera:
+e.firma-CLI le permite ejecutar los 4 perfiles de firma, dandole al firmante la libertad de elegir exactamente qué perfil en sus
+firmas: Solo B, ascender de B a L, añadir T, añadir A, o cualquiera de sus posibles combinaciones. No obstante, con el fin de
+reducir la carga de configuración necesaria para cada firma es que esta herramienta define "preferencias de perfil de firma", y
+las almacena como valor constante en el mismo archivo de usuario local donde se encuentran las rutas de su clave/certificado y
+así simplificar la elección del perfil para culquier firma PAdES posterior.
 
-    - B: Firma con certificado X.509, opcionalmente cadena de confianza de su PKI y hora del reloj
-         del equipo del firmante.
-
-    - L: Firma con certificado X.509, cadena de confianza completa (sin raíz), evidencia OCSP/CRL
-         proveniente de la PKI del firmante y hora del reloj del equipo del firmante. Permite corroborar
-         que una determinada firma fue realizada mientras el certificado del firmante era válido sin
-         depender a posteriori de la infraestructura de la PKI. Es progresión del perfil B (B -> L).
-
-    - T: Firma con sello de tiempo de TSA incrustado en la propia firma. Es el aspecto que otorga la
-         "fecha cierta" al artefacto de firma situandolo en X momento del tiempo. Es técnicamente una
-         "contrafirma" hecha por una autoridad de sellado de tiempo TSA. Literalmente: "Una TSA firma
-         la firma del firmante, confiando en la TSA como autoridad imparcial para determinar el tiempo".
-         Es complementario de los perfiles anteriores (ej: BT, LT).
-    
-    - A: Sello de tiempo de TSA sobre 1 PDF con N cantidad de evidencias anteriores. Es el mismo
-         tipo de sello de tiempo (TimeStampToken) pero aplicado sobre el PDF JUNTO a cualquier cantidad
-         de evidencias criptográficas pre-existentes (multiples firmas, evidencias de validación, otros
-         TSTs, etc.). Son incrementales. Generalmente ocurren al final de una sesión de firma para sellar
-         temporalmente todas las evidencias. Le da "fecha cierta" tanto al contenido del PDF junto a
-         cualquier otra evidencia u operación hecha sobre este. Es complementario de los perfiles
-         anteriores (ej: BA, LA, BTA, LTA)
-
-e.firma-CLI permite ejercer los 4 perfiles de firma dandole al firmante la libertad de elegir qué
-perfil quiere usar en sus firmas: Solo B, ascender de B a L, añadir T, añadir A en cualquiera de sus
-posibles combinaciones.
-
-Con el fin de no ingresar manualmente el perfil de firma deseado en cada sesión de firma, se definen
-"preferencias sobre el perfil de firma" para que culquier firma posterior efectue ese perfil. Usted
-solo tiene que aceptar o negar las siguientes opciones para establecer su preferencia de firma. De
-igual forma puede modificar sus elecciones posterioremente.
+A continuación se le presentarán una serie de preguntas de respuesta SI/NO, en las cuales solo tiene que aceptar o negar según lo
+que prefiera para establecer los valores. De igual modo que en los metadatos de firma, podrá modificar sus elecciones más adelante
+si así lo desea.
 """,
 
-    'preferencias_uso': """CONTINUAAAARR""",
+    'preferencias_uso': """6. Preferencias adicionales sobre el uso del programa.
+
+Se han concluído las configuraciones necesarias en lo que refiere al contexto PAdES, sin embargo existen un par de opciones
+adicionales sobre el uso de este programa que usted puede configurar.
+
+1. Uso o no uso de confirmación automática sobre la reparación de PDFs defectuosos.
+    
+Es más común de lo que parece que no todos los documentos PDF sean inicialmente procesables por la lógica de firmas de este programa
+y las razones pueden ser diversas: software de edicion, escaneres de multifuncionales o de aplicación movil que no implementen
+correctamente el estandar PDF, corrupción accidental por interrupción de un flujo de descarga/transferencia, entre un largo etcetera.
+
+Para garantizar que sus PDFs puedan ser firmados correctamente con e.firma CLI, antes de la sesión de firma real con tus claves
+privadas se realiza siempre un "simulacro de firma" con todos los documentos que usted proponga para evaluar si son correctamente
+procesables, y finalmente firmables. Es durante este simulacro donde se le puede presentar a usted un prompt de confirmación por cada
+incidencia de PDF defectuoso, en el cual deberá decidir si quiere repararlo o no para proseguir con su firma real.
+
+La reparación de PDFs es parte fundamental de la lógica del programa, y consiste en la *creación un archivo PDF nuevo* por cada PDF
+reparado. Los PDFs reparados son *visualmente identicos* a los originales por lo que el contenido de su PDF original no se pierde.
+No obstante el prompt que esta herramienta utiliza para hacerle saber a usted que se ha encontrado con un PDF no procesable requiere
+por lógica de una interacción explicita con el usuario para cada PDF normalizado/reparado, y es justo ahí donde repercute esta
+preferencia de uso: en el prompt de confirmación sobre la reparación de un PDF defectuoso. Es decir, el prompt puede no ser incomodo
+para pocos PDFs reparados en una misma sesión de firma, pero cuando hablamos de firma en lote +100 PDF; confirmar manualmente la
+reparación de cada uno puede tornarse incomodo muy rapidamente, y esta preferencia de uso se enfoca en dichos casos.
+
+Si utiliza autoconfirmación de reparación de PDFs da igual si firma uno o 100,000 de PDFs; la reparación de cada PDF defectuoso
+encontrado se aplicará en automático sin necesidad de una confirmación explicita por su parte.
+
+2. Preservación en disco sobre los PDFs normalizados posterior a cada sesión de firma.
+
+Este punto es consencuencia directa del anterior.
+
+Como ya se ha hecho mención, la reparación de PDFs crea un archivo nuevo por cada reparación, y esta preferencia de uso aborda esa
+situación. La preservación en disco de PDFs normalizados instruye al programa sobre si debe de eliminar o preservar en disco todos
+aquellos *PDFs reparados* que hayan sido creados durante el simulacro. 
+
+Decida lo que decida sus PDFs originales y los PDFs firmados resultantes de las sesiones de firma nunca se tocan, esta preferencia
+simplemente se define si usted desea preservar o los PDFs reparados o no.
+""",
 
     'bienvenida_corta': """Bienvenido a e.firma CLI!
 
-Una herramienta de terminal que permite operar de manera simplificada en el contexto de la PKI del
-Banco de México y el SAT.
+Una herramienta de terminal que permite operar de manera simplificada en el contexto de la PKI del Banco de México y el SAT, y
+principalmente enfocada a las operaciones de firma digital que se pueden realizar con las claves privadas (E.FIRMA, SELLO) de
+algoritmo RSA, proporcionadas por diferentes entidades como el SAT en su respectivo trámite para emisión de e.firma.
 
-Principalmente enfocada a las operaciones de firma digital que se pueden realizar con las claves
-privadas RSA que son proporcionadas por diferentes entidades como el SAT en su respectivo trámite
-para emisión de e.firma.
-
-'e.firma CLI' le otorga al poseedor de una e.firma la capacidad de operar su e.firma, realmente como
-una firma electrónica para firmar sus propios documentos de manera gratuita bajo el esquema PAdES:
-\"PDF Advanced Electronic Signatures\" en todos sus perfiles de firma:
+'e.firma CLI' le otorga al poseedor de una e.firma la capacidad de operar su e.firma, realmente como una firma electrónica para
+firmar sus propios documentos de manera gratuita bajo el esquema PAdES: \"PDF Advanced Electronic Signatures\" en todos sus
+perfiles de firma:
 
     - 'Basic (B)'
     - 'Long-Term (L)'
@@ -176,14 +157,12 @@ una firma electrónica para firmar sus propios documentos de manera gratuita baj
 
 INTRODUCCIÓN AL USO.
 
-Para facilitar la interacción con ésta herrienta en su uso cotidiano se emplean configuraciones de
-usuario las cuales necesita completar con algunos datos relevantes.
+Para facilitar la interacción con ésta herrienta en su uso cotidiano se emplean configuraciones de usuario las cuales necesita
+completar con algunos datos relevantes.
 
-Se le pide que lea atentamente las indicaciones que a continuación se le presentan para que tenga
-una introducción adecuada sobre el uso de esta herramienta.
-
-Sientase libre de cancelar en cualquier momento este procedimiento utilizando CTRL+C y reiniciar con
-el mismo comando 'efcli init
+Se le pide que lea atentamente las indicaciones que a continuación se le presentan para que tenga una introducción adecuada sobre
+el uso de esta herramienta. Sientase libre de cancelar en cualquier momento este procedimiento utilizando CTRL+C y reiniciar con
+el mismo comando 'efcli init'
 """,
     
     'bienvenida_larga': """Bienvenido a e.firma CLI!
@@ -322,6 +301,6 @@ mensajes_adduser = {
     'usuario_local': """Añadiendo usuario local.""",
     'archivos_efirma': """Firma electrónica.""",
     'metadatos_firma': """Metadatos de su firma.""",
-    'pefiles_firma': """Preferencias sobre el perfil de sus firmas.""",
-    'preferencias_uso': """Preferencias de uso del programa."""
+    'pefiles_firma': """Preferencias sobre el perfil de firma.""",
+    'preferencias_uso': """Preferencias adicionales de uso del programa."""
 }

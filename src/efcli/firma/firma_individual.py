@@ -24,7 +24,7 @@ from efcli.firma import prefirma
 logger = logging.getLogger(__name__)
 
 # de momento
-if Path(xdg_config.GLOBAL_CONFIG_FILE).is_file():
+if xdg_config.GLOBAL_CONFIG_FILE.is_file():
     xdg_config.load_global()
     BANXICO_PKI_CTX = pki.get_validation_context(
         trust_roots=xdg_config.GLOBAL_CONFIG['PKI']['trust_roots'],

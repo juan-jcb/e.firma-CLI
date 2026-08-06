@@ -77,7 +77,7 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
         # TODO: debería manejar los nombres de usuario solo mayus o solo minus¿?¿?¿? o permitir usuario distinto de mismo nombre con variación por mayus/minus
         NOMBRE_USUARIO = regex.input_regex(patron=regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo y puntos.")
     time.sleep(1)
-    sys.stdout.write("\033[H\033[2J")
+    sys.stdout.write("\033[2J\033[3J\033[H")
 
     USER_DIR = CONFIG_DIR / NOMBRE_USUARIO
     USER_CONFIG_FILE = USER_DIR / f"{NOMBRE_USUARIO}.toml"
@@ -119,9 +119,9 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
                 continue
             else:
                 if cifrada:
-                    logger.warning("Clave privada (%s) CIFRADA!", encode)
-                    logger.info("Para garantizar identidad criptográfica es necesario comparar si la clave que ingresó es la misma que en el certificado!")
-                    logger.info("Descifre su clave para calcular valores públicos y compararlos (no se almacena nunca su contraseña).")
+                    logger.info("Clave privada (%s) CIFRADA!", encode)
+                    logger.info("Para garantizar identidad criptográfica es necesario comparar si la clave que ingresó corresponde a la del certificado!")
+                    logger.info("Descifre momentaneamente su clave para calcular valores públicos y compararlos (no se almacenará nunca su contraseña).")
                     while True:
                         password = getpass.getpass(prompt="Ingrese su contraseña: ", echo_char="*").encode('utf-8')
                         if cripto.es_passwd_de_pkey(ruta_pkey=pkey_input, tipo_encode=encode, passwd=password):
@@ -145,7 +145,7 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
         else:
             logger.warning("La ruta es incorrecta, ingresela de nuevo!")
     time.sleep(2.5)
-    sys.stdout.write("\033[H\033[2J")
+    sys.stdout.write("\033[2J\033[3J\033[H")
 
     # 4. Metadatos de firma
     print(mensajes['metadatos_firma'])
@@ -155,16 +155,16 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
     LUGAR           = regex.input_regex(patron=regex.SPANISH, mensaje="Lugar de firma: ", pista="Solo caracteres del alfabeto en español.")
     CONTACTO        = regex.input_regex(patron=regex.CORREOS, mensaje="Correo del firmante: ", pista="Solo correos electrónicos.")
     time.sleep(1)
-    sys.stdout.write("\033[H\033[2J")
+    sys.stdout.write("\033[2J\033[3J\033[H")
 
     # 5. Preferencias de perfil de firma.
     print(mensajes['pefiles_firma'])
     USAR_OCSP    = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar validación OCSP? (y/n): ", pista='Solo letras "y", "n".')
-    USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo TST en su contenedor firma? (y/n): ", pista='Solo letras "y", "n".')
-    USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo TST en PDF (/DocTimeStamp)? (y/n): ", pista='Solo letras "y", "n".')
+    USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo en su firma (contrafirma en CMS)? (y/n): ", pista='Solo letras "y", "n".')
+    USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo en el PDF (TST en /DocTimeStamp)? (y/n): ", pista='Solo letras "y", "n".')
     perfil_firma = [f"{i == 'y'}".lower() for i in [USAR_OCSP, USAR_TSA_CMS, USAR_TSA_DSS]] # me parace cutre, pero eh, deja en minisculas un mapeo de booleanos para usar toml
     time.sleep(1)
-    sys.stdout.write("\033[H\033[2J")
+    sys.stdout.write("\033[2J\033[3J\033[H")
 
     # 6. Preferencias de uso del programa.
     print(mensajes['preferencias_uso'])
