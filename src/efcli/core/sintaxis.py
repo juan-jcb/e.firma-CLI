@@ -126,7 +126,7 @@ def validar_sintaxis(args_posicionales: list, modulo: dict) -> dict:
             else:                
                 # Si el siguiente arg posicional existe, evaluar si este NO es OTRA flag existente.
                 # Evita que se le pase como argumento una flag a otra flag.
-                if argumento_de_flag.startswith('-'):
+                if argumento_de_flag.startswith('--'):
                     logger.error('Flag "%s" recibió como argumento "%s". SINTAXIS INVALIDA!. Saliendo...', flag, argumento_de_flag)
                     return False
                 else:
