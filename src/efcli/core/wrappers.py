@@ -14,7 +14,8 @@ def salida_limpia():
         return inner
     return wrapper
 
-def eval(fn_condicion, si_false: str):
+# toda fn evaluadora está obligada a usar firma "*args, **kwargs" los use o no.
+def requiere(fn_condicion, si_false: str):
     def decorador(fn_real):
         @wraps(fn_real)
         def wrapper(*args, **kwargs):

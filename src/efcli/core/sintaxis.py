@@ -46,7 +46,7 @@ def validar_sintaxis(args_posicionales: list, modulo: dict) -> dict:
     
     # 3. Descartar todo aquel parametro posicional que tenga estructura de flag, pero NO sea un flag PERMITIDA en el programa,
     # indpendientemente de si se hayan proporcionado flags y argumentos válidos.
-    flags_invalidas = [i for i in args_posicionales if i not in all_flags and '-' in i]
+    flags_invalidas = [i for i in args_posicionales if i not in all_flags and i.startswith('--')]
     if flags_invalidas:
         invalidas = ''.join([f'\'{i}\' ' for i in flags_invalidas]) # queda un espacio extra al final jaja
         logger.error('Se ingresaron flags posicionales INVALIDAS: %sConsulte las opciones diponibles con: \'efcli -h, --help\'', invalidas)
@@ -55,7 +55,7 @@ def validar_sintaxis(args_posicionales: list, modulo: dict) -> dict:
     # 4. Sanitización de todas las posibles variantes de flag funcionales que puedan ser introducidas al comando.
     # 4.1 Filtro 1. Se descartan todos los argumentos que no sean flags funcionales del progama. Se mantiene el orden de declaración
     flags_validas = [i for i in args_posicionales if i in all_flags] # contiene flags literales repetidas y semánticas repetidas.
-    
+
     # A partir de aquí solo existen flags permitidas para programa y se pretende remover los duplicados sintacticos y semánticos.
     # 4.2 Filtro 2. Filtrado de flags SINTACTICAS repetidas.
     sin_literales_repetidas = []
@@ -126,7 +126,7 @@ def validar_sintaxis(args_posicionales: list, modulo: dict) -> dict:
             else:                
                 # Si el siguiente arg posicional existe, evaluar si este NO es OTRA flag existente.
                 # Evita que se le pase como argumento una flag a otra flag.
-                if '-' in argumento_de_flag:
+                if argumento_de_flag.startswith('-'):
                     logger.error('Flag "%s" recibió como argumento "%s". SINTAXIS INVALIDA!. Saliendo...', flag, argumento_de_flag)
                     return False
                 else:

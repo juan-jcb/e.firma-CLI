@@ -4,30 +4,10 @@ from hashlib import sha256
 from colorama import Fore
 
 from efcli.core import cripto, registros, wrappers, regex, pki, x509
-from . import mensajes
-from .xdg_config import STATE_USERS_FILE, CONFIG_DIR
+from . import xdg_config, mensajes
 from .bootstrap import check_env
 
 logger = logging.getLogger(__name__)
-
-def load_state_users() -> dict:
-    """
-    Carga el JSON de usuarios desde el directorio de estado (XDG_STATE_HOME).
-    Las funciones que llaman a ésta ya evaluan entorno externo viable.
-    """
-    with open(STATE_USERS_FILE, "r") as f:
-        return json.loads(s=f.read())
-
-def load_principal_conf() -> dict:
-    """
-    Carga el TOML de configuración del usuario principal:
-        (JSON de usuarios -> TOML del principal)
-
-    Las funciones que llaman a ésta ya evaluan entorno externo viable.
-    """
-    users = load_state_users()
-    with open(users['usuarios'].get(users['principal'])['config_file'], "rb") as f:
-        return tomllib.load(f)
 
 def new_user(mensajes: dict, es_init: bool = False) -> dict:
     """
@@ -57,7 +37,7 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
     # 2. Nombre de usuario local
     print(mensajes['usuario_local'])
     if not es_init:
-        users = load_state_users()
+        users = xdg_config.load_state_users()
 
         # 1. Evaluar que no existan más de 10 usuarios, así es, limite arbitrario ;-; (por qué se usarian más de 10 perfiles?¿)
         # TODO: cambiar el limite si es necesario.
@@ -77,12 +57,12 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
         # TODO: debería manejar los nombres de usuario solo mayus o solo minus¿?¿?¿? o permitir usuario distinto de mismo nombre con variación por mayus/minus
         NOMBRE_USUARIO = regex.input_regex(patron=regex.ASCII_SIMPLE, mensaje="Nombre de usuario local: ", pista="Alfanumerico mayus/minus, guiones medio, bajo y puntos.")
     time.sleep(1)
-    sys.stdout.write("\033[2J\033[3J\033[H")
 
-    USER_DIR = CONFIG_DIR / NOMBRE_USUARIO
+    USER_DIR = xdg_config.CONFIG_DIR / NOMBRE_USUARIO
     USER_CONFIG_FILE = USER_DIR / f"{NOMBRE_USUARIO}.toml"
 
     # 3. Archivos de e.firma
+    sys.stdout.write("\033[2J\033[3J\033[H")
     print(mensajes['archivos_efirma'])
     while True:
         cert_input = Path(input("Ruta absoluta del certificado del firmante (.cer): "))
@@ -145,9 +125,9 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
         else:
             logger.warning("La ruta es incorrecta, ingresela de nuevo!")
     time.sleep(2.5)
-    sys.stdout.write("\033[2J\033[3J\033[H")
 
     # 4. Metadatos de firma
+    sys.stdout.write("\033[2J\033[3J\033[H")
     print(mensajes['metadatos_firma'])
     ID_FIRMA        = regex.input_regex(patron=regex.ALFANUMERICO, mensaje="Identificador de la firma: ", pista="Alfanumerico mayus/minus.")
     NOMBRE_FIRMANTE = regex.input_regex(patron=regex.SPANISH, mensaje="Nombre del firmante: ", pista="Solo caracteres del alfabeto en español.")
@@ -155,18 +135,18 @@ def new_user(mensajes: dict, es_init: bool = False) -> dict:
     LUGAR           = regex.input_regex(patron=regex.SPANISH, mensaje="Lugar de firma: ", pista="Solo caracteres del alfabeto en español.")
     CONTACTO        = regex.input_regex(patron=regex.CORREOS, mensaje="Correo del firmante: ", pista="Solo correos electrónicos.")
     time.sleep(1)
-    sys.stdout.write("\033[2J\033[3J\033[H")
 
     # 5. Preferencias de perfil de firma.
+    sys.stdout.write("\033[2J\033[3J\033[H")
     print(mensajes['pefiles_firma'])
     USAR_OCSP    = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar validación OCSP? (y/n): ", pista='Solo letras "y", "n".')
     USAR_TSA_CMS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo en su firma (contrafirma en CMS)? (y/n): ", pista='Solo letras "y", "n".')
     USAR_TSA_DSS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar sello de tiempo en el PDF (TST en /DocTimeStamp)? (y/n): ", pista='Solo letras "y", "n".')
     perfil_firma = [f"{i == 'y'}".lower() for i in [USAR_OCSP, USAR_TSA_CMS, USAR_TSA_DSS]] # me parace cutre, pero eh, deja en minisculas un mapeo de booleanos para usar toml
     time.sleep(1)
-    sys.stdout.write("\033[2J\033[3J\033[H")
 
     # 6. Preferencias de uso del programa.
+    sys.stdout.write("\033[2J\033[3J\033[H")
     print(mensajes['preferencias_uso'])
     AUTOCONFIRMAR_NORMALIZADOS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Usar confirmación automática en los prompts para normalización de PDFs? (y/n): ", pista='Solo letras "y", "n".')
     MANTENER_NORMALIZADOS = regex.input_regex(patron=regex.SI_NO, mensaje="¿Mantener PDFs normalizados (si los hay) al terminar las sesiones de firma? (y/n): ", pista='Solo letras "y", "n".')
@@ -243,7 +223,7 @@ mantener_normalizados = {preferencias_uso[1]}
     }
 
 @wrappers.salida_limpia()
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def add_user() -> None:
     """
     Función de prompt interactivo para añadir a un usuario nuevo. Uso post-init.
@@ -252,7 +232,7 @@ def add_user() -> None:
     nuevo = new_user(mensajes=mensajes.mensajes_adduser, es_init=False)
     if nuevo:
         import shutil
-        users = load_state_users()
+        users = xdg_config.load_state_users()
 
         NOMBRE_USUARIO, CERT_USUARIO, PKEY_USUARIO, ID_FIRMA, NOMBRE_FIRMANTE, RAZON, LUGAR, CONTACTO = nuevo['main_values']
         USER_DIR, USER_CONFIG_FILE, cert_input, pkey_input = nuevo['extra']
@@ -272,13 +252,13 @@ def add_user() -> None:
             f.write(SKEL_USER)
         shutil.copy2(src=cert_input, dst=CERT_USUARIO)
         shutil.copy2(src=pkey_input, dst=PKEY_USUARIO)
-        with open(STATE_USERS_FILE, "w") as f:
+        with open(xdg_config.STATE_USERS_FILE, "w") as f:
             f.write(updated_users)
 
         logger.info("Usuario '%s' creado correctamente!", NOMBRE_USUARIO)
 
 @wrappers.salida_limpia()
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def del_user() -> None:
     """
     Función de prompt interactivo para borrar a un usuario del JSON de usuarios.
@@ -286,7 +266,7 @@ def del_user() -> None:
     No se puede borrar a usuario principal.
     Se asume entorno externo viable.
     """
-    users = load_state_users()
+    users = xdg_config.load_state_users()
 
     logger.info("=== Usuarios Actuales ===")
     logger.info("Principal: %s", users['principal'])
@@ -309,8 +289,8 @@ def del_user() -> None:
                 continue
             break
 
-    logger.info("Ha seleccionado al usuario '%s'", seleccionado) 
     print()
+    logger.info("Ha seleccionado al usuario '%s'", seleccionado) 
     while True:
         confirmar = input('¿Desea borrarlo? (y/n): ')
         if confirmar == 'y':
@@ -337,20 +317,20 @@ def del_user() -> None:
     else:
         del(users['usuarios'][seleccionado])
         updated_users = json.dumps(obj=users, indent=2, ensure_ascii=False)
-        with open(STATE_USERS_FILE, "w") as f:
+        with open(xdg_config.STATE_USERS_FILE, "w") as f:
             f.write(updated_users)
 
         logger.info("Usuario '%s' borrado correctamente!", seleccionado)
 
 @wrappers.salida_limpia()
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def change_user() -> None:
     """
     Función de prompt interactivo para cambiar de usuario principal según
     los usuarios que hayan disponibles en el JSON de usuarios.
     Se asume entorno externo viable.
     """
-    users = load_state_users()
+    users = xdg_config.load_state_users()
 
     logger.info("=== Usuarios Actuales ===")
     logger.info("Principal: %s", users['principal'])
@@ -375,14 +355,14 @@ def change_user() -> None:
 
     users['principal'] = seleccionado
     updated_users = json.dumps(obj=users, indent=2, ensure_ascii=False)
-    with open(STATE_USERS_FILE, "w") as f:
+    with open(xdg_config.STATE_USERS_FILE, "w") as f:
         f.write(updated_users)
 
     print()
     logger.info("Bienvenido '%s'!", seleccionado)
 
 @wrappers.salida_limpia()
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def reconf_user() -> None:
     """
     Función de prompt interactivo para reelegir parametros variables en la configuración
@@ -396,9 +376,9 @@ def reconf_user() -> None:
     """
     import tomli_w
     
-    users = load_state_users()
+    users = xdg_config.load_state_users()
     principal_config_path = users['usuarios'][users.get('principal')]['config_file']
-    principal = load_principal_conf()
+    principal = xdg_config.load_principal_conf()
     dict_actualizado = principal.copy()
     opciones = []
 
@@ -470,7 +450,7 @@ def reconf_user() -> None:
         logger.info("Nuevos parametros guardados!")
 
 #def change_username():
-#    users = load_state_users()
+#    users = xdg_config.load_state_users()
 #
 #    logger.info("=== Usuarios Actuales ===")
 #    logger.info("Principal: %s", users['principal'])
@@ -498,13 +478,13 @@ def reconf_user() -> None:
 #    
 #    # TODO: TERMINAAAR
 
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def print_current_user() -> None:
     """
     Imprime un resumen compacto sobre el usuario principal.
     Se asume entorno externo viable.
     """
-    users = load_state_users()
+    users = xdg_config.load_state_users()
     principal_name = users.get('principal')
     principal_dict = users['usuarios'].get(users['principal'])
     cert_path = principal_dict['cert']
@@ -515,13 +495,13 @@ def print_current_user() -> None:
         logger.debug("Usuario: %s", principal_name)
         logger.debug("e.firma: %s", x509.leer_subject_simple(cert))
 
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def print_current_user_conf() -> None:
     """
     Imprime la configuración del usuario principal de forma compacta y legible (estiliza su TOML).
     Se asume entorno externo viable.
     """
-    users = load_state_users()
+    users = xdg_config.load_state_users()
     principal_name = users.get('principal')
     principal_dict = users['usuarios'].get(users['principal'])
     cert_path = principal_dict['cert']
@@ -555,24 +535,24 @@ def print_current_user_conf() -> None:
         logger.debug("Sello de tiempo en firma (T): %s", cnf['perfiles_firma']['TST_CMS'])
         logger.debug("Sello de tiempo en PDF (A): %s", cnf['perfiles_firma']['TST_DSS'])
 
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def print_current_user_toml() -> None:
     """
     Imprime la configuración del usuario principal tal cual desde su TOML.
     Se asume entorno externo viable.
     """
-    users = load_state_users()
+    users = xdg_config.load_state_users()
     with open(users['usuarios'].get(users['principal'])['config_file'], "r") as f:
         print(f.read())
 
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def list_users() -> None:
     """
     Imprime los usuarios disponibles en el programa desde el JSON de usuarios.
     Se asume entorno externo viable.
     """
     logger.info("=== USUARIOS ===")
-    with open(STATE_USERS_FILE, "r") as f:
+    with open(xdg_config.STATE_USERS_FILE, "r") as f:
         usuarios = json.loads(s=f.read())
 
     logger.info("Principal: %s", usuarios['principal'])

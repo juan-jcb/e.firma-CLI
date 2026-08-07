@@ -17,16 +17,17 @@ DEVICE = os.uname()
 #   User-Agent: <NombreProducto>/<Versión> (RFCXXXX; <Plataforma>) [+URL opcional]
 
 OCSP_CLIENT_HEADERS = {
-    "User-Agent": f"{APP.upper()}-OCSP/{VERSION} (RFC6960; {DEVICE.sysname}; {DEVICE.machine}) [+{REPOSITORY}]",
+    "User-Agent": f"{APP.upper()}-OCSP/{VERSION} (RFC6960; {DEVICE.sysname}; {DEVICE.machine})",
     "Content-Type": "application/ocsp-request",
     "Accept": "application/ocsp-response"
 }
     #"User-Agent": "OCSP-Client/1.0",
     #"User-Agent": "RFC6960-OCSP-Client/1.0",
     #"User-Agent": "PKI Validation Client/2.4 (OCSP; Windows 11; x64)",
+    #"User-Agent": f"{APP.upper()}-OCSP/{VERSION} (RFC6960; {DEVICE.sysname}; {DEVICE.machine}) [+{REPOSITORY}]",
 
 TIMESTAMPING_CLIENT_HEADERS = {
-    "User-Agent": f"{APP.upper()}-TSP/{VERSION} (RFC3161; {DEVICE.sysname}; {DEVICE.machine}) [+{REPOSITORY}]",
+    "User-Agent": f"{APP.upper()}-TSP/{VERSION} (RFC3161; {DEVICE.sysname}; {DEVICE.machine})",
     "Content-Type": "application/timestamp-query",
     "Accept": "application/timestamp-reply",
 }
@@ -35,6 +36,7 @@ TIMESTAMPING_CLIENT_HEADERS = {
     #"User-Agent": "PKI TimeStamp Client/1.0",
     #"User-Agent": "SecureTimestamp/1.0 (+https://example.com)",
     #"User-Agent": "FirmaDigital-TSP/2.1.0 (+https://firma.example.com)",
+    #"User-Agent": f"{APP.upper()}-TSP/{VERSION} (RFC3161; {DEVICE.sysname}; {DEVICE.machine}) [+{REPOSITORY}]",
 
 # Flags estáticas se evaluan en conmutador, las de argumento en sintaxis post-conmutador.
 # Se mantiene la estructura en este diccionario por estetica visual.
@@ -72,9 +74,10 @@ FLAGS = {
 
         'pki': {
             'flags_de_argumento': {
-                'add_ca': ('--add-ca',),
+                'add_ca': ('--add',),
             },
             'flags_estaticas': {
+                'del_ca': ('--del',),
                 'list': ('--list',),
             }
         },
@@ -167,10 +170,11 @@ Submodulo USER:
   user --conf               Imprime la configuración del usuario principal simplificada.
   user --toml               Imprime la configuración del usuario principal en su formato original TOML.
 
-Submodulo PKI (no disponible aún):
+Submodulo PKI:
   
-  pki --list                Imprime el listado de CAs en las que éste programa confia actualmente.
-  pki --add-ca FILE         Importa un Bundle de CAs para confiar con éste programa.
+  pki --list                Imprime el listado de PKIs en las que éste programa confia actualmente (no disponible aún).
+  pki --add FILE            Importa una PKI externa a las entidades de confianza del programa desde su bundle PEM.
+  pki --del                 Borra una PKI importada en el programa (prompt interactivo).
   
 Submodulo OCSP:
 

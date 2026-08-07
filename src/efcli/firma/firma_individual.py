@@ -26,16 +26,24 @@ logger = logging.getLogger(__name__)
 # de momento
 if xdg_config.GLOBAL_CONFIG_FILE.is_file():
     xdg_config.load_global()
+    PDF_RUTA_BASE = xdg_config.GLOBAL_CONFIG['pdf_ruta_base']
+    OCSP          = xdg_config.GLOBAL_CONFIG['OCSP']
+    TSA           = xdg_config.GLOBAL_CONFIG['TSA']
     BANXICO_PKI_CTX = pki.get_validation_context(
         trust_roots=xdg_config.GLOBAL_CONFIG['PKI']['trust_roots'],
         intermediate_cas=xdg_config.GLOBAL_CONFIG['PKI']['intermediate_cas'],
     )
-    TSA = xdg_config.GLOBAL_CONFIG['TSA']
-    OCSP = xdg_config.GLOBAL_CONFIG['OCSP']
-    PDF_RUTA_BASE = xdg_config.GLOBAL_CONFIG['pdf_ruta_base']
 
-    # asumimos que si o si existen TSAs fijas para el programa indpendientemente de si se usan o no.
-    TLS_BASE = tls.TransporteTLSFirmas(ssl_context=tls.make_tls_trust(trust_system_store=True, ca_bundle=None))
+    pki_extras = None
+    state = xdg_config.load_state_file()
+    if state['assets']['external_pki']:
+        pki_extras = b''
+        for i in state['assets']['external_pki']:
+            with open(i, 'rb') as f:
+                pki_extras += f.read()
+        pki_extras = pki_extras.decode('ascii')
+
+    TLS_BASE = tls.TransporteTLSFirmas(ssl_context=tls.make_tls_trust(trust_system_store=True, ca_bundle=pki_extras))
     GENERADOR_TSA = TLS_BASE.iter_timestampers(TSA["endpoints"])
 
 async def manejador_ocsp(firmante_crt, issuer_crt, dir_save):
@@ -452,7 +460,7 @@ async def firma(firmante_ctx: dict, pdfs: list) -> None:
     #   forma sin incluír la raíz de ninguna entidad final ya que se asume esta existirá en el validador.
     certs_dss = firmante_ctx["subject_certificates"]
 
-    dir_sesion_firma = Path(f'{PDF_RUTA_BASE}/({usuarios.load_state_users()['principal']}) Sesión de Firma - {datetime.now().strftime("%a %b %d %I:%M:%S %p %Y")}')
+    dir_sesion_firma = Path(f'{PDF_RUTA_BASE}/({xdg_config.load_state_users()['principal']}) Sesión de Firma - {datetime.now().strftime("%a %b %d %I:%M:%S %p %Y")}')
     perfil_firma_final = ['B']
     
     print()
@@ -719,8 +727,8 @@ def hacer_firma():
     try:
         # 1. Carga inicial y prefirma.
         # Evaluar que el material a firmar sea viable antes de cualquier otra cosa, evidentemente (¬_¬").
-        logger.info("Usando configuración por defecto (%s).", usuarios.load_state_users()['principal'])
-        PRINCIPAL = usuarios.load_principal_conf()
+        logger.info("Usando configuración por defecto (%s).", xdg_config.load_state_users()['principal'])
+        PRINCIPAL = xdg_config.load_principal_conf()
         pdf_ruta_base = Path(PDF_RUTA_BASE)
         pdfs = []
         normalizados = None

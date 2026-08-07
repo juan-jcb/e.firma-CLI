@@ -7,6 +7,7 @@ from efcli import config
 from efcli.core.sintaxis import validar_sintaxis
 from efcli.ocsp.ocsp_cli import nueva_request, imprimir_respuesta, imprimir_estado
 from efcli.xdg.usuarios import add_user, del_user, change_user, reconf_user, list_users, print_current_user, print_current_user_conf, print_current_user_toml
+from efcli.xdg.cas import add_ca, del_ca
 
 from efcli.firma import firma_individual
 from efcli.xdg.bootstrap import check_env, reset_env, init
@@ -82,6 +83,24 @@ def entrada(sysargv: list):
                 logger.warning("Ingrese una opción válida, vea opciones de modulo user con (efcli -h)")
                 return None
 
+    # 3. "Submodulo" pki
+    elif sysargv[1] == 'pki':
+        if len(sysargv) == 2:
+            logger.warning("Ingrese una opción válida, vea opciones de modulo pki con (efcli -h)")
+            return None
+
+        match sysargv[2]:
+            case '--list':
+                pass
+            case '--add':
+                stx = validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['submodulos']['pki'])
+                if not stx:
+                    return None
+                add_ca(cafile=stx['--add'])
+            case '--del':
+                del_ca()
+
+    # 4. Submodulo ocsp
     elif sysargv[1] == 'ocsp':
         if len(sysargv) == 2:
             logger.warning("Ingrese una opción válida, vea opciones de modulo oscp con (efcli -h)")

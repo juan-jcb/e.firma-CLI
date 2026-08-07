@@ -8,7 +8,8 @@ logger = logging.getLogger(__name__)
 
 MAIN_ENV_DIRS = (xdg_config.CONFIG_DIR, xdg_config.DATA_DIR, xdg_config.STATE_DIR) # GLOBAL_CONFIG_FILE['pdf_ruta_base']
 
-def check_env(log_level=logging.INFO) -> bool:
+# requiere firma *args, **kwargs, dado que se usa con wrapper como fn evaluadora aunque no los uses
+def check_env(log_level=logging.INFO, *args, **kwargs) -> bool:
     """
     Evaluación en 2 partes sobre la integridad del entorno externo XDG.
 
@@ -57,12 +58,20 @@ def check_env(log_level=logging.INFO) -> bool:
                     logger.debug("El directorio '%s' no fue encontrado.", d)
                     return False
 
-            for f in programa['assets']:
+            for f in programa['assets']['internal_pki']:
                 if Path(f).is_file():
-                    logger.debug("Existe: '%s'", f)
+                    logger.debug("Existe PKI interna: '%s'", f)
                 else:
-                    logger.debug("El archivo '%s' no fue encontrado.", f)
+                    logger.debug("El archivo de PKI interna '%s' no fue encontrado.", f)
                     return False
+
+            if len(programa['assets']['external_pki']) >= 1:
+                for f in programa['assets']['external_pki']:
+                    if Path(f).is_file():
+                        logger.debug("Existe PKI externa: '%s'", f)
+                    else:
+                        logger.debug("El archivo de PKI externa '%s' no fue encontrado.", f)
+                        return False
                 
             logger.debug("=== USUARIOS ===")
             with open(xdg_config.STATE_USERS_FILE, "r") as f:
@@ -84,7 +93,7 @@ def check_env(log_level=logging.INFO) -> bool:
         return True
 
 @wrappers.salida_limpia()
-@wrappers.eval(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+@wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def reset_env() -> None:
     """
     Borra el entorno externo XDG.
@@ -215,7 +224,10 @@ endpoints = [
                 'data_pki_dir': xdg_config.DATA_PKI_DIR.as_posix(),
             },
 
-            'assets': [f"{xdg_config.DATA_PKI_DIR}/{i.name}" for i in PKI_ASSETS]
+            'assets': {
+                'internal_pki': [f"{xdg_config.DATA_PKI_DIR}/{i.name}" for i in PKI_ASSETS],
+                'external_pki': []
+            }
         }
 
     init_state_usuarios = {

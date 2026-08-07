@@ -158,13 +158,13 @@ def make_tls_trust(trust_system_store: bool = True, ca_bundle: str = None,) -> s
     if trust_system_store:
         ctx = ssl.create_default_context() # "truststore.SSLContext(...)" también aplicaría
         if ca_bundle:
-            ctx.load_verify_locations(cafile=ca_bundle)
+            ctx.load_verify_locations(cadata=ca_bundle)
     
     else:
         if not ca_bundle:
             raise ValueError("Necesita un 'ca_bundle' si usa 'trust_system_store=False'")
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ctx.load_verify_locations(cafile=ca_bundle)
+        ctx.load_verify_locations(cadata=ca_bundle)
 
     return ctx
 
