@@ -172,7 +172,7 @@ Submodulo USER:
 
 Submodulo PKI:
   
-  pki --list                Imprime el listado de PKIs en las que éste programa confia actualmente (no disponible aún).
+  pki --list                Imprime el listado de PKIs en las que éste programa confia actualmente.
   pki --add FILE            Importa una PKI externa a las entidades de confianza del programa desde su bundle PEM.
   pki --del                 Borra una PKI importada en el programa (prompt interactivo).
   

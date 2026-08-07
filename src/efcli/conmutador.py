@@ -7,7 +7,7 @@ from efcli import config
 from efcli.core.sintaxis import validar_sintaxis
 from efcli.ocsp.ocsp_cli import nueva_request, imprimir_respuesta, imprimir_estado
 from efcli.xdg.usuarios import add_user, del_user, change_user, reconf_user, list_users, print_current_user, print_current_user_conf, print_current_user_toml
-from efcli.xdg.cas import add_ca, del_ca
+from efcli.xdg.cas import add_ca, del_ca, list_ca
 
 from efcli.firma import firma_individual
 from efcli.xdg.bootstrap import check_env, reset_env, init
@@ -91,7 +91,7 @@ def entrada(sysargv: list):
 
         match sysargv[2]:
             case '--list':
-                pass
+                list_ca()
             case '--add':
                 stx = validar_sintaxis(args_posicionales=sysargv, modulo=config.FLAGS['submodulos']['pki'])
                 if not stx:

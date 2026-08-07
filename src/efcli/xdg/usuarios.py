@@ -3,7 +3,7 @@ from pathlib import Path
 from hashlib import sha256
 from colorama import Fore
 
-from efcli.core import cripto, registros, wrappers, regex, pki, x509
+from efcli.core import core_utils, cripto, registros, wrappers, regex, pki, x509
 from . import xdg_config, mensajes
 from .bootstrap import check_env
 
@@ -289,18 +289,8 @@ def del_user() -> None:
                 continue
             break
 
-    print()
-    logger.info("Ha seleccionado al usuario '%s'", seleccionado) 
-    while True:
-        confirmar = input('¿Desea borrarlo? (y/n): ')
-        if confirmar == 'y':
-            print('Borrando...')
-            break
-        elif confirmar == 'n':
-            print('Saliendo...')
-            exit()
-        else:
-            print('Ingrese una opción correcta.')
+    logger.info("Ha seleccionado al usuario '%s'\n", seleccionado) 
+    core_utils.continuar_salir_msj(msj='¿Desea borrarlo? (y/n): ', si_continua='Borrando...', si_sale='Saliendo...')
 
     try:
         import shutil
@@ -551,14 +541,13 @@ def list_users() -> None:
     Imprime los usuarios disponibles en el programa desde el JSON de usuarios.
     Se asume entorno externo viable.
     """
-    logger.info("=== USUARIOS ===")
-    with open(xdg_config.STATE_USERS_FILE, "r") as f:
-        usuarios = json.loads(s=f.read())
+    users = xdg_config.load_state_users()
 
-    logger.info("Principal: %s", usuarios['principal'])
-    for idx, i in enumerate(iterable=usuarios['usuarios'].keys(), start=1):
+    logger.info("=== USUARIOS ===")
+    logger.info("Principal: %s", users['principal'])
+    for idx, i in enumerate(iterable=users['usuarios'].keys(), start=1):
         logger.info("%s: %s", idx, i)
-        for v, k in usuarios['usuarios'][i].items(): # porque son diccionarios
+        for v, k in users['usuarios'][i].items(): # porque son diccionarios
             if not Path(k).exists():
                 logger.info("[%s] '%s' no fue encontrado. Saliendo...", i , k)
                 exit()

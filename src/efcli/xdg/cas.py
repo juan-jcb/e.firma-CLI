@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives import serialization
 from asn1crypto import pem
 
 from efcli.core import core_utils, wrappers, x509, regex
+
 from . import xdg_config
 from .bootstrap import check_env
 
@@ -28,8 +29,12 @@ def add_ca(cafile: str) -> None:
     ca_certs = []
     ca_names = []
     ca_pem_strings = b''
-    with open(cafile, 'rb') as f:
-        b = f.read()
+    try:
+        with open(cafile, 'rb') as f:
+            b = f.read()
+    except FileNotFoundError:
+        logger.error("Ese archivo no existe, intentelo nuevamente.")
+        exit()
 
     try:
         if b[:27] == b'-----BEGIN CERTIFICATE-----':
@@ -63,9 +68,7 @@ def add_ca(cafile: str) -> None:
     for idx, i in enumerate(iterable=ca_names, start=1):
         print(f'  ({idx}) {i}')
 
-    core_utils.continuar_salir(msj='\n¿Confía en estas CA y desea importarlas en el programa? (y/n): ')
-
-    from efcli.xdg.xdg_config import STATE_FILE, DATA_PKI_DIR
+    core_utils.continuar_salir_msj(msj='\n¿Confía en estas CA y desea importarlas en el programa? (y/n): ', si_continua='Importando...', si_sale='Saliendo...')
     state = xdg_config.load_state_file()
 
     base_prefix = 20
@@ -73,11 +76,11 @@ def add_ca(cafile: str) -> None:
     if state['assets']['external_pki']:
         last_prefix = int(Path(state['assets']['external_pki'][-1]).name[:Path(state['assets']['external_pki'][-1]).name.index('-')])
 
-    nueva_ca = f'{DATA_PKI_DIR}/{str(last_prefix + 1)}-{Path(cafile).stem}.pem'
+    nueva_ca = f'{xdg_config.DATA_PKI_DIR}/{str(last_prefix + 1)}-{Path(cafile).stem}.pem'
     state['assets']['external_pki'].append(nueva_ca)
     nuevo_state = json.dumps(obj=state, indent=2, ensure_ascii=False)
 
-    with open(STATE_FILE, 'w') as f:
+    with open(xdg_config.STATE_FILE, 'w') as f:
         f.write(nuevo_state)
     with open(nueva_ca, 'wb') as f:
         f.write(ca_pem_strings)
@@ -88,7 +91,6 @@ def add_ca(cafile: str) -> None:
 @wrappers.salida_limpia()
 @wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
 def del_ca():
-    from efcli.xdg.xdg_config import STATE_FILE
     state = xdg_config.load_state_file()
 
     if not state['assets']['external_pki']:
@@ -108,24 +110,32 @@ def del_ca():
             seleccionado = Path(state['assets']['external_pki'][opcion - 1]) # -1 por el start en enumerate
             break
 
-    print()
-    logger.info("Ha seleccionado la PKI: '%s'", seleccionado.stem[seleccionado.stem.index('-')+1:])
-    while True:
-        confirmar = input('¿Desea borrarlo? (y/n): ')
-        if confirmar == 'y':
-            print('Borrando...')
-            break
-        elif confirmar == 'n':
-            print('Saliendo...')
-            exit()
-        else:
-            print('Ingrese una opción correcta.')
+    logger.info("Ha seleccionado la PKI: '%s'\n", seleccionado.stem[seleccionado.stem.index('-')+1:])
+    core_utils.continuar_salir_msj(msj='¿Desea eliminarla? (y/n): ', si_continua='Borrando...', si_sale='Saliendo...')
 
     del(state['assets']['external_pki'][opcion - 1])
     nuevo_state = json.dumps(obj=state, indent=2, ensure_ascii=False)
 
-    with open(STATE_FILE, 'w') as f:
+    with open(xdg_config.STATE_FILE, 'w') as f:
         f.write(nuevo_state)
     seleccionado.unlink()
 
     logger.info("PKI: '%s' borrada correctamente!", seleccionado.stem[seleccionado.stem.index('-')+1:])
+
+@wrappers.requiere(fn_condicion=check_env, si_false="No cuenta con un entorno viable (use: 'efcli init').")
+def list_ca() -> None:
+    """
+    Imprime las PKI externas disponibles en el programa.
+    """
+    state = xdg_config.load_state_file()
+
+    if not state['assets']['external_pki']:
+        logger.info('No se tienen PKI externas importadas. Agregue una con "efcli pki --add FILE"')
+        exit()
+
+    logger.info("=== PKIs Externas de Confianza ===")
+    for idx, i in enumerate(iterable=state['assets']['external_pki'], start=1):
+        if not Path(i).exists():
+            logger.warning("[%s] '%s' no fue encontrado. Saliendo...", Path(i).stem[Path(i).stem.index('-')+1:] , i)
+            exit()
+        logger.info("%s: %s", idx, Path(i).stem[Path(i).stem.index('-')+1:])

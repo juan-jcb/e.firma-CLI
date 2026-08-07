@@ -12,8 +12,8 @@ from pyhanko.sign import signers, fields
 
 def continuar_salir(msj: str):
     """
-    Prompt mínimo de confirmación para continuación o salida
-    del programa.
+    Prompt mínimo de confirmación (y/n) para continuación o salida
+    del programa. Acepta input vacio como sinonimo de 'y'.
     """
     while True:
         opcion = input(msj)
@@ -27,6 +27,26 @@ def continuar_salir(msj: str):
             print('Ingrese una opción correcta.')
     
     return True # para usar ambos: fn() o 'if fn()'
+
+def continuar_salir_msj(msj: str, si_continua: str, si_sale: str):
+    """
+    Prompt mínimo de confirmación (y/n) para continuación o salida
+    del programa. Usar cuando se requiere extender sobre el contexto
+    del mensaje de continuación. El input debe ser solo 'y' o 'n'.
+    """
+    while True:
+        opcion = input(msj)
+        if opcion == 'y':
+            print(si_continua)
+            break
+        elif opcion == 'n':
+            print(si_sale)
+            exit()
+        else:
+            print('Ingrese una opción correcta.')
+
+    return True
+
 
 def guardar_archivos(*args, **kwargs) -> None:
     """
