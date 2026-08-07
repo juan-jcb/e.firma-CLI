@@ -96,7 +96,7 @@ Esto se traduce en la práctica tal que: es necesario descargar desde el listado
 
 E importarlos manualmente en su respectivo ***software de validación de firmas***; por ejemplo **Adobe Acrobat Reader** para poder así validar existosamente cualquier firma realizada, ya sea por e.firma CLI o por otras herramientas disponibles en el mercado (que puedan operar en el contexto PKI del Banco de México y el SAT).
 
-Adicional: los certificados con números de serie 1 y 2 **no se consideran** puesto que se encuentran vencidos, la entidad raíz 2 siendo el caso más reciente habiendo expirado con fecha: **Jul 20 18:32:51 2026 GMT**, por lo que a efectos prácticos de esta herramientas solo consideraremos los números de serie 3, 4, 5 (6 en un futuro si es que Banxico crease una nueva CA raíz)
+Adicional: los certificados con números de serie 1 y 2 **no se consideran** puesto que se encuentran vencidos, la entidad raíz 2 siendo el caso más reciente habiendo expirado con fecha: **Jul 20 18:32:51 2026 GMT**, por lo que a efectos prácticos de esta herramienta solo consideramos los números de serie 3, 4, 5 (6 en un futuro si es que Banxico crease una nueva CA raíz)
 
 ## En cuanto al propósito específico de la presente herramienta.
 
@@ -132,12 +132,11 @@ e.firma CLI te permite ejercer los 4 perfiles de firma **PAdES Baseline** en cua
 - **T**: Firma con sello de tiempo RFC 3161 de una autoridad de sellado de tiempo (TSA) incrustado en la propia firma, fijandola en X momento del tiempo. En terminos simples, un sello de tiempo otra firma digital pero que proviene de una TSA, y en este contexto el sello se aplica como *contrafirma*, es decir: "Una TSA firma la firma del firmante, y se confia en la TSA como autoridad imparcial para determinar el tiempo". Es complementario de los perfiles anteriores (ej: BT, LT).
 - **A**: Sello de tiempo de TSA sobre un documento PDF con N cantidad de evidencias anteriores. Es el mismo tipo de sello de tiempo que en 'T' (TimeStampToken de RFC 3161) pero ahora aplicado sobre el archivo PDF **junto** a cualquier cantidad de evidencias criptográficas pre-existentes (otras firmas, evidencias de validación, otros sellos de tiempo, etc.). Estos sellos son incrementales y suelen actualizarse cada varios años. Generalmente ocurren al final de una sesión de firma para "sellar" el archivo y las evidencias acumuladas en un determinado momento del tiempo. Es complementario de los perfiles anteriores (ej: BA, LA, BTA, LTA)
 
-
 ### Operaciones adicionales.
 
 Para su función principal e.firma CLI ya posee una implementación e interfaz mayoritariamente funcional (siempre claro buscando robustecer su operatividad).
 
-Non obstante, e.firma CLI no pretende ser exclusivamente una herramienta para firmar PDFs, aspira a ser una suite completa con una interfaz de uso realtivamente simplifcada para las principales operaciones criptográficas relacionadas con un entorno PKI privado para el firmado de PDFs en esquema PAdES.
+No obstante, e.firma CLI no pretende ser exclusivamente una herramienta para firmar PDFs, aspira a ser una suite completa con una interfaz de uso realtivamente simplifcada para las principales operaciones criptográficas relacionadas con un entorno PKI privado para el firmado de PDFs en esquema PAdES.
 
 Esto quiere decir:
 
@@ -151,9 +150,9 @@ Para tener una referencia de qué operaciones adicionales se pueden hacer actual
 
 ## Sobre los sellos de tiempo.
 
-Los sellos de tiempo son el principal punto de fricción que afecta a cualquier software de firma digital que opere en éste contexto, independientemente de si se trata de e.firma CLI o de cualquier otra solución comercial, pero no por restricciones tecnológicas; si no por decisiones administrativas.
+Es importante extender de manera clara y concisa sobre los sellos de tiempo, ya que estos son el principal punto de fricción que afecta a cualquier software de firma digital que opere en éste contexto, independientemente de si se trata de e.firma CLI o de cualquier otra solución comercial, pero no por restricciones tecnológicas; si no por decisiones administrativas.
 
-Empecemos por aclarar que un "sello de tiempo" es firma digital con un formato distinto, y dado que sigue siendo una firma digital se entiende lo siguiente: Una firma digital se aplica sobre un hash criptográfico, y los hashes criptográficos se calculan sobre cualquier secuencia binaria independientemente de su longitud o naturaleza semántica, por lo que mientras se tenga posesión del material criptográfico en plano de la clave privada se puede firmar digitalmente cualquier contenido.
+Empecemos por aclarar que un "sello de tiempo" es una firma digital en distinto formato, y dado que sigue siendo una firma digital se entiende lo siguiente: Una firma digital se aplica sobre un hash criptográfico, y los hashes criptográficos se calculan sobre cualquier secuencia binaria independientemente de su longitud o naturaleza semántica, por lo que mientras se tenga posesión del material criptográfico en plano de la clave privada se puede firmar digitalmente cualquier contenido, si la firma proviene de una TSA su artefacto de firma específico tendrá una cierta distribución, y si proviene de cualquier otra clave privada "no TSA" tendrá otra diferente, pero ambos serán iguales en su operación criptográfica primitiva: firmas digitales, específicamente representadas mediante contenedores CMS/PKCS#7 de tipo "SignedData".
 
 Así mismo los protocolos y herramientas involucradas en el uso de una TSA son públicos, por lo que cualquiera puede montar una TSA casera y operar un ecosistema PKI independiente y desregulado, lo unico que varía es la *confianza reputacional* sobre esa infraestructura.
 
@@ -234,7 +233,6 @@ NOM151IniTime ::= GeneralizedTime
 2. Los TSTs que produce la TSA de un PSC son "distintos" unicamente en la agregación de 2 extensiones, opcionales respecto al protocolo.
 3. El valor crítico para el sellado (la firma digital de la TSA) sigue haciendo uso de los mismos procedimientos, procedimientos que cualquiera podría reproducir en local.
 4. La unica diferenciación que realmente tiene peso tangible y afecta al uso es que el PSC fue avalado como proveedor por la Secretaria de Economia y se le otorgó el caracter de poseer fecha cierta a cualquier cosa firmada/sellada por una de sus TSAs.
-
 
 ### Para concluir en términos prácticos.
 
